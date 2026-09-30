@@ -69,9 +69,13 @@ export class BootScene extends Phaser.Scene {
   createNamanBattleTexture() {
     const raw = this.textures.get('naman_battle_raw').getSourceImage()
     if (!raw) return
+    // Pre-scale to actual display size (max 170px tall) — avoids 6MB canvas on mobile
+    const TARGET_H = 170
+    const scale = TARGET_H / raw.height
+    const w = Math.round(raw.width * scale)
     const c = document.createElement('canvas')
-    c.width = raw.width; c.height = raw.height
-    c.getContext('2d').drawImage(raw, 0, 0)
+    c.width = w; c.height = TARGET_H
+    c.getContext('2d').drawImage(raw, 0, 0, w, TARGET_H)
     this.textures.addCanvas('naman_battle', c)
   }
 
