@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "RPG Portfolio Dev",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "cd /d C:\\rpg-portfolio && npm run dev"],
+      "port": 3000
+    }
+  ]
+}

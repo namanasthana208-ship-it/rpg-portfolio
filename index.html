@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Naman Asthana — Portfolio</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#FFD700" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Naman" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: #080818;
+      overflow: hidden;
+    }
+    canvas {
+      display: block;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+    #mute-btn {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      width: 36px;
+      height: 36px;
+      background: rgba(0,0,0,0.55);
+      border: 1px solid rgba(255,215,0,0.45);
+      border-radius: 5px;
+      color: #fff;
+      font-size: 18px;
+      line-height: 1;
+      cursor: pointer;
+      z-index: 500;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+    }
+    #mute-btn:active { opacity: 0.7; }
+
+    #rotate-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: #080818;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 24px;
+      font-family: 'Press Start 2P', monospace;
+      color: #FFD700;
+      text-align: center;
+      padding: 24px;
+    }
+    #rotate-overlay .icon {
+      font-size: 56px;
+      animation: spin 2s ease-in-out infinite alternate;
+    }
+    #rotate-overlay p {
+      font-size: 9px;
+      line-height: 1.9;
+      color: #aaa;
+    }
+    @keyframes spin {
+      from { transform: rotate(-20deg); }
+      to   { transform: rotate(20deg); }
+    }
+    @media (orientation: portrait) {
+      #rotate-overlay { display: flex; }
+    }
+  </style>
+</head>
+<body>
+  <div id="rotate-overlay">
+    <div class="icon">📱</div>
+    <p>PLEASE ROTATE<br>YOUR DEVICE<br>TO LANDSCAPE</p>
+  </div>
+  <button id="mute-btn" title="Toggle sound" aria-label="Toggle sound">🔊</button>
+
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.88.2/dist/phaser.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/phaser3-rex-plugins@1.80.9/dist/rexvirtualjoystickplugin.min.js"></script>
+  <script type="module" src="./src/main.js"></script>
+  <script>
+    // Wire mute button (works whether audio is unlocked or not)
+    const muteBtn = document.getElementById('mute-btn')
+    muteBtn.addEventListener('click', () => {
+      const mgr = window.audioMgr
+      if (!mgr) return
+      const muted = mgr.toggleMute()
+      muteBtn.textContent = muted ? '🔇' : '🔊'
+      muteBtn.title = muted ? 'Unmute' : 'Mute'
+    })
+    // Sync button state on page load (respects saved preference)
+    window.addEventListener('load', () => {
+      try {
+        const saved = JSON.parse(localStorage.getItem('audio_muted') ?? 'false')
+        if (saved) { muteBtn.textContent = '🔇'; muteBtn.title = 'Unmute' }
+      } catch {}
+    })
+  </script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js'))
+    }
+  </script>
+</body>
+</html>
