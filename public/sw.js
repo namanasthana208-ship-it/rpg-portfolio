@@ -1,4 +1,4 @@
-const CACHE = 'naman-v1'
+const CACHE = 'naman-v3'
 const PRECACHE = ['/', '/index.html']
 
 self.addEventListener('install', e => {
