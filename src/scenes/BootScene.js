@@ -19,6 +19,43 @@ export class BootScene extends Phaser.Scene {
       callback: () => { dots = (dots + 1) % 4; loadText.setText('Loading' + '.'.repeat(dots || 1)) },
     })
 
+    // --- debug overlay (visible even if Phaser renderer freezes) ---
+    const dbg = document.createElement('div')
+    dbg.id = 'boot-dbg'
+    dbg.style.cssText = 'position:fixed;bottom:4px;left:4px;right:4px;color:#0f0;font:9px monospace;z-index:9999;white-space:pre-wrap;pointer-events:none;line-height:1.4'
+    document.body.appendChild(dbg)
+    const _log = msg => { dbg.textContent = msg; console.log('[boot]', msg) }
+    _log('preload start')
+
+    // Safety net: force scene start if loader never completes
+    const _forceStart = () => {
+      clearTimeout(window.__bootSafetyTimer)
+      if (!this.scene.isActive('TitleScene')) {
+        _log('forcing TitleScene (timeout/error)')
+        setTimeout(() => { const el = document.getElementById('boot-dbg'); if (el) el.remove() }, 6000)
+        try { this.scene.launch('UIScene') } catch (_) {}
+        try { this.scene.start('TitleScene') } catch (_) {}
+      }
+    }
+    window.__bootSafetyTimer = setTimeout(_forceStart, 20000)
+
+    this.load.on('progress', v => {
+      const pct = Math.round(v * 100)
+      _log(`loading: ${pct}%`)
+      loadText.setText('Loading ' + pct + '%')
+    })
+    this.load.on('loaderror', file => {
+      _log(`WARN: failed ${file.key} (${file.src || file.url})`)
+    })
+    this.load.on('complete', () => {
+      clearTimeout(window.__bootSafetyTimer)
+      _log('assets done → create()')
+    })
+
+    window.onerror = (msg, src, line) => {
+      _log(`JS ERROR: ${msg} (${src}:${line})`)
+    }
+
     const PCT = 'assets/pocket_creature_tamer/Pocket Creature Tamer DEMO/'
     const GBS = 'assets/gb_studio_tileset/Free/'
 
@@ -53,15 +90,30 @@ export class BootScene extends Phaser.Scene {
   }
 
   create() {
+    const dbg = document.getElementById('boot-dbg')
+    const _log = msg => { if (dbg) dbg.textContent = msg; console.log('[boot]', msg) }
+    clearTimeout(window.__bootSafetyTimer)
     try {
+      _log('create: tileset')
       this.buildTileset()
+      _log('create: building frames')
       this.registerBuildingFrames()
+      _log('create: player frames')
       this.registerPlayerFrames()
+      _log('create: NPC textures (13)')
       this.createNPCTextures()
+      _log('create: battle texture')
       this.createNamanBattleTexture()
+      _log('create: done')
     } catch (e) {
+      if (dbg) dbg.textContent = 'ERROR: ' + e.message
       console.error('BootScene create error:', e)
     }
+    // Hide debug overlay a moment after transition (keep visible long enough to screenshot)
+    setTimeout(() => {
+      const el = document.getElementById('boot-dbg')
+      if (el) el.remove()
+    }, 4000)
     this.scene.launch('UIScene')
     this.scene.start('TitleScene')
   }
