@@ -393,7 +393,9 @@ export class UIScene extends Phaser.Scene {
     this.joyBase  = this.add.circle(JX, JY, R, 0x888888, 0.45).setDepth(150)
     this.joyThumb = this.add.circle(JX, JY, TR, 0xdddddd, 0.7).setDepth(151)
 
-    this.joyStick = this.plugins.get('rexVirtualJoystick').add(this, {
+    const rexJoy = this.plugins.get('rexVirtualJoystick')
+    if (!rexJoy) { this.joyStick = null; return }
+    this.joyStick = rexJoy.add(this, {
       x: JX, y: JY,
       radius: R,
       base: this.joyBase,

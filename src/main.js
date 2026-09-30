@@ -1,3 +1,4 @@
+import VirtualJoystickPlugin from 'phaser3-rex-plugins/plugins/virtualjoystick-plugin.js'
 import { AudioManager }  from './audio/AudioManager.js'
 import { BootScene }     from './scenes/BootScene.js'
 import { TitleScene }    from './scenes/TitleScene.js'
@@ -18,7 +19,7 @@ const config = {
   plugins: {
     global: [{
       key: 'rexVirtualJoystick',
-      plugin: window.RexVirtualJoystickPlugin,
+      plugin: VirtualJoystickPlugin,
       start: true,
     }],
   },

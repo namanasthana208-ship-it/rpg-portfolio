@@ -27,18 +27,6 @@ export class BootScene extends Phaser.Scene {
     const _log = msg => { dbg.textContent = msg; console.log('[boot]', msg) }
     _log('preload start')
 
-    // Safety net: force scene start if loader never completes
-    const _forceStart = () => {
-      clearTimeout(window.__bootSafetyTimer)
-      if (!this.scene.isActive('TitleScene')) {
-        _log('forcing TitleScene (timeout/error)')
-        setTimeout(() => { const el = document.getElementById('boot-dbg'); if (el) el.remove() }, 6000)
-        try { this.scene.launch('UIScene') } catch (_) {}
-        try { this.scene.start('TitleScene') } catch (_) {}
-      }
-    }
-    window.__bootSafetyTimer = setTimeout(_forceStart, 20000)
-
     this.load.on('progress', v => {
       const pct = Math.round(v * 100)
       _log(`loading: ${pct}%`)
@@ -48,7 +36,6 @@ export class BootScene extends Phaser.Scene {
       _log(`WARN: failed ${file.key} (${file.src || file.url})`)
     })
     this.load.on('complete', () => {
-      clearTimeout(window.__bootSafetyTimer)
       _log('assets done → create()')
     })
 
@@ -92,7 +79,6 @@ export class BootScene extends Phaser.Scene {
   create() {
     const dbg = document.getElementById('boot-dbg')
     const _log = msg => { if (dbg) dbg.textContent = msg; console.log('[boot]', msg) }
-    clearTimeout(window.__bootSafetyTimer)
     try {
       _log('create: tileset')
       this.buildTileset()
