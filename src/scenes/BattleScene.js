@@ -141,6 +141,13 @@ export class BattleScene extends Phaser.Scene {
         this._typeText('A wild NAMAN appeared!', () => {
           this.awaitingTap = true
           this._showTapHint()
+          this.time.delayedCall(2000, () => {
+            if (this.awaitingTap) {
+              this.awaitingTap = false
+              this._hideTapHint()
+              this._showMenu()
+            }
+          })
         })
       },
     })
