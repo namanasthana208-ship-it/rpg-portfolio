@@ -199,15 +199,11 @@ export class BattleScene extends Phaser.Scene {
     this.awaitingTap = false
     this.menuActive  = true
     this.textObj.setText('What will\nyou do?')
-
-    if (this.isTouch) {
-      this._buildTouchMenu()
-    } else {
-      this._buildDesktopMenu()
-    }
+    this._buildCursorMenu()
+    if (this.isTouch) this._buildBattleControls()
   }
 
-  _buildDesktopMenu() {
+  _buildCursorMenu() {
     const mx = W - 156, my = BOX_Y + 4, mw = 150, mh = H - BOX_Y - 8
     this.menuBg = this.add.graphics().setDepth(22)
     this.menuBg.fillStyle(0xffffff, 1)
@@ -227,22 +223,27 @@ export class BattleScene extends Phaser.Scene {
     this._updateMenuCursor()
   }
 
-  _buildTouchMenu() {
-    const bw = W - 32, bh = 20
-    const bx = W / 2
-    const opts = ['EDUCATION', 'EXPERIENCE', 'SKILLS', 'CONTACT', 'RUN']
-    this.touchBtns = []
-    this.touchBtnTexts = []
+  _buildBattleControls() {
+    const depth = 26
+    const JX = 68, JY = H - 46, R = 38, TR = 20
+    this._bJoyBase  = this.add.circle(JX, JY, R, 0x888888, 0.45).setDepth(depth)
+    this._bJoyThumb = this.add.circle(JX, JY, TR, 0xdddddd, 0.7).setDepth(depth + 1)
+    const rexJoy = this.plugins.get('rexVirtualJoystick')
+    if (rexJoy) {
+      this._bJoy = rexJoy.add(this, {
+        x: JX, y: JY, radius: R,
+        base: this._bJoyBase, thumb: this._bJoyThumb,
+        dir: '4dir', forceMin: 14,
+      })
+    }
+    this._bJoyPrevY = 0
 
-    opts.forEach((label, i) => {
-      const by = BOX_Y + 14 + i * 22
-      const bg = this.add.rectangle(bx, by, bw, bh, i === 4 ? 0xf0f0f0 : 0xffffff, 0.95)
-        .setDepth(22).setInteractive()
-      const txt = this.add.text(bx, by, label, { fontFamily: FONT, fontSize: '7px', color: '#000000' })
-        .setOrigin(0.5).setDepth(23)
-      bg.on('pointerdown', () => this._selectOption(i))
-      this.touchBtns.push(bg)
-      this.touchBtnTexts.push(txt)
+    const AX = 164, AY = H - 46
+    this._bBtnA = this.add.circle(AX, AY, 26, 0xdd4444, 0.8).setDepth(depth).setInteractive()
+    this.add.text(AX, AY, 'A', { fontFamily: FONT, fontSize: '12px', color: '#fff' })
+      .setOrigin(0.5).setDepth(depth + 1)
+    this._bBtnA.on('pointerdown', () => {
+      if (this.menuActive) this._selectOption(this.selectedOpt)
     })
   }
 
@@ -275,8 +276,11 @@ export class BattleScene extends Phaser.Scene {
     this.menuBg?.destroy()
     this.menuCursor?.destroy()
     this.menuTexts?.forEach(t => t.destroy())
-    this.touchBtns?.forEach(b => b.destroy())
-    this.touchBtnTexts?.forEach(t => t.destroy())
+    this._bJoy?.destroy()
+    this._bJoyBase?.destroy()
+    this._bJoyThumb?.destroy()
+    this._bBtnA?.destroy()
+    this._bJoy = this._bJoyBase = this._bJoyThumb = this._bBtnA = null
   }
 
   _doPortfolio(tab = 'exp') {
@@ -368,12 +372,20 @@ export class BattleScene extends Phaser.Scene {
       return
     }
 
-    if (this.menuActive && !this.isTouch) {
+    if (this.menuActive) {
       const upJD   = Phaser.Input.Keyboard.JustDown(this.keyUp) || Phaser.Input.Keyboard.JustDown(this.keyW)
       const downJD = Phaser.Input.Keyboard.JustDown(this.keyDown) || Phaser.Input.Keyboard.JustDown(this.keyS)
       if (upJD   && this.selectedOpt > 0) { this.selectedOpt--; this._updateMenuCursor() }
       if (downJD && this.selectedOpt < 4) { this.selectedOpt++; this._updateMenuCursor() }
       if (actionJD) this._selectOption(this.selectedOpt)
+
+      // Joystick up/down (mobile)
+      if (this._bJoy) {
+        const jy = this._bJoy.force > 0 ? this._bJoy.forceY / this._bJoy.radius : 0
+        if (jy < -0.5 && this._bJoyPrevY >= -0.5 && this.selectedOpt > 0) { this.selectedOpt--; this._updateMenuCursor() }
+        if (jy >  0.5 && this._bJoyPrevY <=  0.5 && this.selectedOpt < 4) { this.selectedOpt++; this._updateMenuCursor() }
+        this._bJoyPrevY = jy
+      }
     }
   }
 
