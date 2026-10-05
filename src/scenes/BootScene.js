@@ -113,34 +113,8 @@ export class BootScene extends Phaser.Scene {
     const c = document.createElement('canvas')
     c.width = w; c.height = TARGET_H
     const ctx = c.getContext('2d')
-    ctx.imageSmoothingEnabled = false
+    ctx.imageSmoothingEnabled = false  // pixel art: nearest-neighbor, no bicubic blur
     ctx.drawImage(raw, 0, 0, w, TARGET_H)
-
-    // Fill small transparent gaps (1-2px holes between hair strands, arm edges)
-    // that appear as bright "white spots" against the light battle background.
-    // A transparent pixel with 4+ opaque neighbors is an interior hole — fill it
-    // with the average color of its opaque neighbors.
-    const imgData = ctx.getImageData(0, 0, w, TARGET_H)
-    const d = imgData.data
-    for (let pass = 0; pass < 3; pass++) {
-      const src = new Uint8ClampedArray(d)
-      for (let y = 1; y < TARGET_H - 1; y++) {
-        for (let x = 1; x < w - 1; x++) {
-          const i = (y * w + x) * 4
-          if (src[i + 3] > 10) continue  // already opaque
-          let r = 0, g = 0, b = 0, n = 0
-          for (let dy = -1; dy <= 1; dy++) {
-            for (let dx = -1; dx <= 1; dx++) {
-              if (!dx && !dy) continue
-              const ni = ((y + dy) * w + (x + dx)) * 4
-              if (src[ni + 3] > 128) { r += src[ni]; g += src[ni + 1]; b += src[ni + 2]; n++ }
-            }
-          }
-          if (n >= 4) { d[i] = r / n; d[i + 1] = g / n; d[i + 2] = b / n; d[i + 3] = 255 }
-        }
-      }
-    }
-    ctx.putImageData(imgData, 0, 0)
     this.textures.addCanvas('naman_battle', c)
   }
 
