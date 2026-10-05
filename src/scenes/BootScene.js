@@ -107,41 +107,13 @@ export class BootScene extends Phaser.Scene {
   createNamanBattleTexture() {
     const raw = this.textures.get('naman_battle_raw').getSourceImage()
     if (!raw) return
-
-    // Pre-scale to display size first (132×170) — small canvas is fast for flood fill
+    // PNG is pre-processed (background already transparent) — just scale to display size
     const TARGET_H = 170
     const scale = TARGET_H / raw.height
     const w = Math.round(raw.width * scale)
     const c = document.createElement('canvas')
     c.width = w; c.height = TARGET_H
-    const ctx = c.getContext('2d')
-    ctx.drawImage(raw, 0, 0, w, TARGET_H)
-
-    // Flood-fill black background from all 4 edges → transparent.
-    // Safe on mobile: operates on ~22K pixels (132×170), not the original large image.
-    const id = ctx.getImageData(0, 0, w, TARGET_H)
-    const d = id.data
-    const visited = new Uint8Array(w * TARGET_H)
-    const stack = []
-    const push = px => {
-      if (!visited[px] && d[px * 4] < 30 && d[px * 4 + 1] < 30 && d[px * 4 + 2] < 30) {
-        visited[px] = 1
-        stack.push(px)
-      }
-    }
-    for (let x = 0; x < w; x++) { push(x); push((TARGET_H - 1) * w + x) }
-    for (let y = 0; y < TARGET_H; y++) { push(y * w); push(y * w + w - 1) }
-    while (stack.length > 0) {
-      const px = stack.pop()
-      d[px * 4 + 3] = 0
-      const x = px % w, y = Math.floor(px / w)
-      if (x > 0)            push(px - 1)
-      if (x < w - 1)        push(px + 1)
-      if (y > 0)            push(px - w)
-      if (y < TARGET_H - 1) push(px + w)
-    }
-    ctx.putImageData(id, 0, 0)
-
+    c.getContext('2d').drawImage(raw, 0, 0, w, TARGET_H)
     this.textures.addCanvas('naman_battle', c)
   }
 
