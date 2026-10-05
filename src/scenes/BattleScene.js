@@ -31,6 +31,14 @@ export class BattleScene extends Phaser.Scene {
     // Full black bg
     this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 1).setDepth(0)
 
+    // Touch: advance dialogue when awaitingTap
+    this.input.on('pointerdown', () => {
+      if (this.awaitingTap) {
+        this.awaitingTap = false
+        this._showMenu()
+      }
+    })
+
     // Start sequence
     this._playFlash(() => this._playWipe(() => this._showBattle()))
   }
