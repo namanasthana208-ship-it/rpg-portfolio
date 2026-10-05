@@ -19,7 +19,7 @@ export class ChamberScene extends Phaser.Scene {
     this.exiting   = false
     this._lastAdj  = null
     this.namanGx   = 14
-    this.namanGy   = 8
+    this.namanGy   = 4
   }
 
   create() {
@@ -186,9 +186,9 @@ export class ChamberScene extends Phaser.Scene {
       }
     }
 
-    // Arena platform behind Naman (gym-leader podium feel) — namanGx=14, namanGy=8
+    // Arena platform behind Naman (gym-leader podium feel) — hardcoded to namanGx=14, namanGy=4
     const ax = 12 * TILE
-    const ay = 7 * TILE
+    const ay = 3 * TILE
     const aw = 5 * TILE, ah = 3 * TILE
     ctx.fillStyle = '#c8a030'
     ctx.fillRect(ax, ay, aw, ah)
