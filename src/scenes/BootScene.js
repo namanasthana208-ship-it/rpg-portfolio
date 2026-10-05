@@ -113,7 +113,9 @@ export class BootScene extends Phaser.Scene {
     const w = Math.round(raw.width * scale)
     const c = document.createElement('canvas')
     c.width = w; c.height = TARGET_H
-    c.getContext('2d').drawImage(raw, 0, 0, w, TARGET_H)
+    const ctx = c.getContext('2d')
+    ctx.imageSmoothingEnabled = false  // pixel art: nearest-neighbor, no bicubic blur
+    ctx.drawImage(raw, 0, 0, w, TARGET_H)
     this.textures.addCanvas('naman_battle', c)
   }
 
