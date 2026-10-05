@@ -28,17 +28,6 @@
       image-rendering: pixelated;
       image-rendering: crisp-edges;
     }
-    /* Phone landscape: fill the entire screen (no black bars) */
-    @media screen and (max-height: 500px) and (orientation: landscape) {
-      canvas {
-        width: 100dvw !important;
-        height: 100dvh !important;
-        position: fixed !important;
-        top: 0 !important;
-        left: 0 !important;
-        margin: 0 !important;
-      }
-    }
     #mute-btn {
       position: fixed;
       top: 10px;
@@ -119,6 +108,20 @@
         if (saved) { muteBtn.textContent = '🔇'; muteBtn.title = 'Unmute' }
       } catch {}
     })
+
+    // Phone landscape: uniform zoom to fill width, bottom-anchored (no squeeze)
+    function applyMobileZoom() {
+      const isPhone = window.innerHeight < 500 && window.innerWidth > window.innerHeight
+      const canvas  = document.querySelector('canvas')
+      if (!canvas) return
+      if (!isPhone) { canvas.style.transform = ''; canvas.style.transformOrigin = ''; return }
+      const s = window.innerWidth / canvas.offsetWidth
+      if (s <= 1.01) return
+      canvas.style.transform = `scale(${s})`
+      canvas.style.transformOrigin = 'bottom center'
+    }
+    window.addEventListener('load', () => { setTimeout(applyMobileZoom, 400); })
+    window.addEventListener('resize', applyMobileZoom)
   </script>
 </body>
 </html>
