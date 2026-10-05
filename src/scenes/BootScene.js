@@ -107,40 +107,42 @@ export class BootScene extends Phaser.Scene {
   createNamanBattleTexture() {
     const raw = this.textures.get('naman_battle_raw').getSourceImage()
     if (!raw) return
-    const TARGET_H = 170
-    const scale = TARGET_H / raw.height
-    const w = Math.round(raw.width * scale)
     const c = document.createElement('canvas')
-    c.width = w; c.height = TARGET_H
+    c.width = raw.width; c.height = raw.height
     const ctx = c.getContext('2d')
-    ctx.imageSmoothingEnabled = false
-    ctx.drawImage(raw, 0, 0, w, TARGET_H)
-
-    // Fill small transparent gaps (1-2px holes between hair strands, arm edges)
-    // that appear as bright "white spots" against the light battle background.
-    // A transparent pixel with 4+ opaque neighbors is an interior hole — fill it
-    // with the average color of its opaque neighbors.
-    const imgData = ctx.getImageData(0, 0, w, TARGET_H)
-    const d = imgData.data
-    for (let pass = 0; pass < 3; pass++) {
-      const src = new Uint8ClampedArray(d)
-      for (let y = 1; y < TARGET_H - 1; y++) {
+    ctx.drawImage(raw, 0, 0)
+    const d = ctx.getImageData(0, 0, c.width, c.height)
+    const w = c.width, h = c.height
+    const TOL = 12
+    const visited = new Uint8Array(w * h)
+    const stack = []
+    for (let x = 0; x < w; x++) { stack.push(x, 0); stack.push(x, h - 1) }
+    for (let y = 1; y < h - 1; y++) { stack.push(0, y); stack.push(w - 1, y) }
+    while (stack.length) {
+      const sy = stack.pop(), sx = stack.pop()
+      if (sx < 0 || sx >= w || sy < 0 || sy >= h) continue
+      const vi = sy * w + sx
+      if (visited[vi]) continue
+      visited[vi] = 1
+      const pi = vi * 4
+      if (d.data[pi] > TOL || d.data[pi + 1] > TOL || d.data[pi + 2] > TOL) continue
+      d.data[pi + 3] = 0
+      stack.push(sx + 1, sy, sx - 1, sy, sx, sy + 1, sx, sy - 1)
+    }
+    for (let pass = 0; pass < 2; pass++) {
+      for (let y = 1; y < h - 1; y++) {
         for (let x = 1; x < w - 1; x++) {
-          const i = (y * w + x) * 4
-          if (src[i + 3] > 10) continue  // already opaque
-          let r = 0, g = 0, b = 0, n = 0
-          for (let dy = -1; dy <= 1; dy++) {
-            for (let dx = -1; dx <= 1; dx++) {
-              if (!dx && !dy) continue
-              const ni = ((y + dy) * w + (x + dx)) * 4
-              if (src[ni + 3] > 128) { r += src[ni]; g += src[ni + 1]; b += src[ni + 2]; n++ }
-            }
-          }
-          if (n >= 4) { d[i] = r / n; d[i + 1] = g / n; d[i + 2] = b / n; d[i + 3] = 255 }
+          const pi = (y * w + x) * 4
+          if (d.data[pi + 3] !== 0) continue
+          let opaque = 0
+          for (let dy = -1; dy <= 1; dy++)
+            for (let dx = -1; dx <= 1; dx++)
+              if ((dx || dy) && d.data[((y + dy) * w + (x + dx)) * 4 + 3] > 0) opaque++
+          if (opaque >= 6) d.data[pi + 3] = 255
         }
       }
     }
-    ctx.putImageData(imgData, 0, 0)
+    ctx.putImageData(d, 0, 0)
     this.textures.addCanvas('naman_battle', c)
   }
 
