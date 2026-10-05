@@ -113,11 +113,6 @@ export class BattleScene extends Phaser.Scene {
     const targetX = W - 24 - sprW / 2
     const sprY = FIELD_H - 12 - maxH / 2
 
-    // Portrait backdrop: same color as field, sits above the line layer (depth 2)
-    // but below the sprite (depth 10). Transparent gaps in the character show this
-    // clean gray instead of the line pattern underneath.
-    this.add.rectangle(targetX, sprY, sprW, maxH, 0xe8ecf0, 1).setDepth(9)
-
     this.namanSprite = this.add.image(W + sprW, sprY, 'naman_battle')
       .setScale(scale).setDepth(10)
 
