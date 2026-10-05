@@ -35,6 +35,7 @@ export class BattleScene extends Phaser.Scene {
     this.input.on('pointerdown', () => {
       if (this.awaitingTap) {
         this.awaitingTap = false
+        this._hideTapHint()
         this._showMenu()
       }
     })
@@ -139,6 +140,7 @@ export class BattleScene extends Phaser.Scene {
         this._buildTextBox()
         this._typeText('A wild NAMAN appeared!', () => {
           this.awaitingTap = true
+          this._showTapHint()
         })
       },
     })
@@ -158,6 +160,20 @@ export class BattleScene extends Phaser.Scene {
       fontFamily: FONT, fontSize: '9px', color: '#000000',
       wordWrap: { width: W - 180 },
     }).setDepth(21)
+  }
+
+  _showTapHint() {
+    this._tapHint = this.add.text(W - 20, H - 16, '▼', {
+      fontFamily: FONT, fontSize: '8px', color: '#000000',
+    }).setOrigin(1, 1).setDepth(22)
+    this.tweens.add({
+      targets: this._tapHint, alpha: 0, duration: 500,
+      ease: 'Linear', yoyo: true, repeat: -1,
+    })
+  }
+
+  _hideTapHint() {
+    if (this._tapHint) { this._tapHint.destroy(); this._tapHint = null }
   }
 
   _typeText(msg, onDone) {
@@ -294,6 +310,7 @@ export class BattleScene extends Phaser.Scene {
       c.classList.toggle('active', c.id === `pf-${tab}`)
     })
 
+    this.scene.setVisible(false, 'UIScene')
     requestAnimationFrame(() => { overlay.style.opacity = '1' })
 
     // Tab switching
@@ -346,6 +363,7 @@ export class BattleScene extends Phaser.Scene {
 
     if (this.awaitingTap && actionJD) {
       this.awaitingTap = false
+      this._hideTapHint()
       this._showMenu()
       return
     }
