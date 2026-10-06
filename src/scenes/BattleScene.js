@@ -1,7 +1,7 @@
 // The wild encounter: flash → diagonal wipe → shutters open → Naman slides in as a
 // silhouette, colours in with a cry → "A wild NAMAN appeared!" → 2×2 battle menu.
 
-import { FONT, isTouchDevice } from '../layout.js'
+import { FONT, isTouchDevice, getLayout } from '../layout.js'
 import { TouchStick } from '../ui/TouchStick.js'
 import { openPortfolio } from '../ui/portfolio.js'
 
@@ -52,17 +52,35 @@ export class BattleScene extends Phaser.Scene {
 
   // ─── Metrics ──────────────────────────────────────────────────────
 
+  // Landscape: text box + menu share one strip under the field.
+  // Portrait: the field fills the top view; text box and a big 2×2 menu stack in the deck.
   _metrics() {
-    const W = this.scale.width, H = this.scale.height
-    const phone = H < 300
+    const L = getLayout(this)
+    const { W, H, phone, portrait } = L
+    if (portrait) {
+      const FH = L.view.h
+      const tb = { x: 6, y: FH + 10, w: W - 12, h: 64 }
+      const my = tb.y + tb.h + 8
+      const menu = { x: 6, y: my, w: W - 12, h: Math.min(124, H - my - 12) }
+      return {
+        W, H, phone, portrait, FH, nH: Math.round(FH * 0.74),
+        ex: Math.round(W * 0.66), ey: Math.round(FH * 0.9),
+        px: Math.round(W * 0.24), pScale: 4, infoW: 132,
+        deck: { x: 0, y: FH, w: W, h: H - FH }, tb, menu,
+        wrapMenu: tb.w - 32, wrapFull: tb.w - 32,
+      }
+    }
     const TB = phone ? 72 : 88
     const FH = H - TB
-    const nH = Math.round(FH * 0.84)
+    const menuW = phone ? Math.min(Math.round(W * 0.56), 300) : 236
     return {
-      W, H, phone, TB, FH, nH,
+      W, H, phone, portrait, FH, nH: Math.round(FH * 0.84),
       ex: Math.round(W * 0.7), ey: Math.round(FH * 0.93),
-      px: Math.round(W * 0.22), pScale: phone ? 4 : 5,
-      menuW: phone ? Math.min(Math.round(W * 0.56), 300) : 236,
+      px: Math.round(W * 0.22), pScale: phone ? 4 : 5, infoW: phone ? 150 : 172,
+      deck: { x: 0, y: FH, w: W, h: TB },
+      tb: { x: 4, y: FH + 4, w: W - 8, h: TB - 8 },
+      menu: { x: W - menuW - 4, y: FH + 4, w: menuW, h: TB - 8 },
+      wrapMenu: W - 48 - menuW, wrapFull: W - 58,
     }
   }
 
@@ -178,7 +196,7 @@ export class BattleScene extends Phaser.Scene {
   _layout() {
     if (!this.bg) return
     const m = this.m = this._metrics()
-    const { W, H, FH, TB, phone } = m
+    const { W, FH, phone, deck, tb, menu } = m
 
     // Sky + field
     const g = this.bg.clear()
@@ -206,7 +224,7 @@ export class BattleScene extends Phaser.Scene {
     this._heroX = m.px
 
     // Enemy info box
-    const iw = phone ? 150 : 172, ih = phone ? 38 : 42
+    const iw = m.infoW, ih = phone ? 38 : 42
     const ig = this.infoBg.clear()
     ig.fillStyle(0x283048, 1).fillRoundedRect(0, 0, iw, ih, 6)
     ig.fillStyle(0xf8f8f0, 1).fillRoundedRect(3, 3, iw - 6, ih - 6, 4)
@@ -223,17 +241,19 @@ export class BattleScene extends Phaser.Scene {
 
     // Text box
     const bx = this.box.clear()
-    bx.fillStyle(0x1c2238, 1).fillRect(0, FH, W, TB)
-    bx.fillStyle(0x2c3a64, 1).fillRoundedRect(4, FH + 4, W - 8, TB - 8, 6)
-    bx.lineStyle(2, 0xa8b8e0, 1).strokeRoundedRect(7, FH + 7, W - 14, TB - 14, 4)
-    this.text.setPosition(18, FH + 18).setLineSpacing(phone ? 8 : 10)
+    bx.fillStyle(0x1c2238, 1).fillRect(deck.x, deck.y, deck.w, deck.h)
+    if (m.portrait) bx.fillStyle(0xffd700, 0.85).fillRect(0, FH, W, 2)
+    bx.fillStyle(0x2c3a64, 1).fillRoundedRect(tb.x, tb.y, tb.w, tb.h, 6)
+    bx.lineStyle(2, 0xa8b8e0, 1).strokeRoundedRect(tb.x + 3, tb.y + 3, tb.w - 6, tb.h - 6, 4)
+    this.text.setPosition(tb.x + 14, tb.y + 14).setLineSpacing(phone ? 8 : 10)
     this._wrap()
+    const ay = tb.y + tb.h - 14
     this.tweens.killTweensOf(this.arrow)
-    this.arrow.setPosition(W - 22, H - 18)
-    this.tweens.add({ targets: this.arrow, y: H - 15, duration: 280, yoyo: true, repeat: -1, ease: 'Sine.InOut' })
+    this.arrow.setPosition(tb.x + tb.w - 18, ay)
+    this.tweens.add({ targets: this.arrow, y: ay + 3, duration: 280, yoyo: true, repeat: -1, ease: 'Sine.InOut' })
 
     // 2×2 menu
-    const mw = m.menuW, mh = TB - 8, mx = W - mw - 4, my = FH + 4
+    const { x: mx, y: my, w: mw, h: mh } = menu
     const mg = this.menuBg.clear()
     mg.fillStyle(0x283048, 1).fillRoundedRect(mx, my, mw, mh, 6)
     mg.fillStyle(0xf8f8f0, 1).fillRoundedRect(mx + 3, my + 3, mw - 6, mh - 6, 4)
@@ -260,8 +280,7 @@ export class BattleScene extends Phaser.Scene {
   }
 
   _wrap() {
-    const right = this.menu?.visible ? this.m.menuW + 30 : 40
-    this.text.setWordWrapWidth(this.m.W - 18 - right)
+    this.text.setWordWrapWidth(this.menu?.visible ? this.m.wrapMenu : this.m.wrapFull)
   }
 
   _drawCells(flash = -1) {

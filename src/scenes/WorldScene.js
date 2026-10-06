@@ -1,7 +1,7 @@
 // Shared base for every walkable scene (overworld, house, chamber):
 // grid movement, NPCs, talk flow, interaction hint, camera and cleanup.
 
-import { FONT, TILE, isTouchDevice, fitCameraBounds } from '../layout.js'
+import { FONT, TILE, isTouchDevice, fitCameraBounds, getLayout } from '../layout.js'
 
 export const STEP_MS = 140
 // Character sheets put the feet 20px below the frame centre; lift them so a
@@ -56,7 +56,7 @@ export class WorldScene extends Phaser.Scene {
 
     const cam = this.cameras.main
     cam.setRoundPixels(true)
-    fitCameraBounds(cam, cols * TILE, rows * TILE)
+    this._applyView()
     cam.startFollow(this.player, true, 1, 1)
     cam.setFollowOffset(0, SPRITE_Y)
     cam.fadeIn(fadeMs, 0, 0, 0)
@@ -98,10 +98,16 @@ export class WorldScene extends Phaser.Scene {
   }
 
   _onResize() {
-    const cam = this.cameras.main
-    cam.setSize(this.scale.width, this.scale.height)
-    fitCameraBounds(cam, this.cols * TILE, this.rows * TILE)
+    this._applyView()
     this.onResize?.()
+  }
+
+  // Portrait phones draw the world in the top view; the control deck owns the rest.
+  _applyView() {
+    const { view } = getLayout(this)
+    const cam = this.cameras.main
+    cam.setViewport(view.x, view.y, view.w, view.h)
+    fitCameraBounds(cam, this.cols * TILE, this.rows * TILE)
   }
 
   _makeShadow() {

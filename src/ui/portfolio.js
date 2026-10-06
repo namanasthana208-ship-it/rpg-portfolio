@@ -178,7 +178,7 @@ const CSS = `
 .pf-link-label{font:9px ${PX};color:#ffd700}
 .pf-link-value{font-size:22px;color:#fff;text-decoration:underline;text-decoration-color:rgba(255,215,0,.6);text-underline-offset:4px;word-break:break-all}
 .pf-link-arrow{font-size:28px;color:#ffd700}
-@media (max-height:520px){
+@media (max-height:520px),(max-width:520px){
   #pf-root{padding:0}
   #pf-card{width:100%;height:100%;border:0;box-shadow:none}
   #pf-head{gap:10px;padding:6px max(8px,env(safe-area-inset-right)) 6px max(14px,env(safe-area-inset-left))}

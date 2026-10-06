@@ -236,7 +236,7 @@ export class ChamberScene extends WorldScene {
   }
 
   _buildVignette() {
-    const W = this.scale.width, H = this.scale.height
+    const W = this.cameras.main.width, H = this.cameras.main.height
     const c = document.createElement('canvas'); c.width = W; c.height = H
     const ctx = c.getContext('2d')
     const g = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.22, W / 2, H / 2, Math.max(W, H) * 0.72)

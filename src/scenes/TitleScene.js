@@ -1,4 +1,4 @@
-import { FONT, isTouchDevice } from '../layout.js'
+import { FONT, isTouchDevice, isPhone } from '../layout.js'
 
 export class TitleScene extends Phaser.Scene {
   constructor() { super('TitleScene') }
@@ -19,12 +19,15 @@ export class TitleScene extends Phaser.Scene {
     if (this._started) return
     this.children.removeAll(true)
     this.tweens.killAll()
+    this.time.removeAllEvents()
     this._build()
   }
 
   _build() {
     const W = this.scale.width, H = this.scale.height
-    const phone = H < 300
+    const phone = isPhone()
+    const narrow = W < 320
+    const titleSize = narrow ? '15px' : phone ? '18px' : '20px'
     this.add.rectangle(0, 0, W, H, 0x080818).setOrigin(0)
 
     this._stars = []
@@ -36,10 +39,10 @@ export class TitleScene extends Phaser.Scene {
       this._stars.push({ obj: s, base: s.alpha, phase: Math.random() * Math.PI * 2, speed: 600 + Math.random() * 900 })
     }
 
-    const cy = H * 0.4
-    this.add.text(W / 2 + 2, cy + 2, 'NAMAN ASTHANA', { fontFamily: FONT, fontSize: phone ? '18px' : '20px', color: '#3a2a00' }).setOrigin(0.5)
+    const cy = H * (narrow ? 0.36 : 0.4)
+    this.add.text(W / 2 + 2, cy + 2, 'NAMAN ASTHANA', { fontFamily: FONT, fontSize: titleSize, color: '#3a2a00' }).setOrigin(0.5)
     const title = this.add.text(W / 2, cy, 'NAMAN ASTHANA', {
-      fontFamily: FONT, fontSize: phone ? '18px' : '20px', color: '#ffd700',
+      fontFamily: FONT, fontSize: titleSize, color: '#ffd700',
       stroke: '#000000', strokeThickness: 4,
     }).setOrigin(0.5)
     this.tweens.add({ targets: title, y: cy - 2, duration: 1600, yoyo: true, repeat: -1, ease: 'Sine.InOut' })
@@ -54,7 +57,7 @@ export class TitleScene extends Phaser.Scene {
     let f = 0
     this.time.addEvent({ delay: 520, loop: true, callback: () => { f = f ? 0 : 2; hero.setFrame(`down_${f}`) } })
 
-    this._prompt = this.add.text(W / 2, H - (phone ? 42 : 56), isTouchDevice() ? 'TAP TO START' : 'PRESS ENTER', {
+    this._prompt = this.add.text(W / 2, H - (narrow ? 90 : phone ? 42 : 56), isTouchDevice() ? 'TAP TO START' : 'PRESS ENTER', {
       fontFamily: FONT, fontSize: '9px', color: '#ffffff',
     }).setOrigin(0.5)
     this._blink = this.tweens.add({ targets: this._prompt, alpha: 0.15, duration: 650, yoyo: true, repeat: -1, ease: 'Sine.InOut' })

@@ -55,16 +55,14 @@ function startGame() {
   })
 }
 
-// Phones: go fullscreen + lock landscape on the first tap (needs a real user gesture).
+// Phones: go fullscreen on the first tap (needs a real user gesture). Both orientations work.
 document.addEventListener('touchend', () => {
   if (!isPhone() || document.fullscreenElement) return
   const el = document.documentElement
   const req = el.requestFullscreen || el.webkitRequestFullscreen
   if (!req) return
   try {
-    req.call(el, { navigationUI: 'hide' })
-      ?.then?.(() => screen.orientation?.lock?.('landscape').catch(() => {}))
-      .catch(() => {})
+    req.call(el, { navigationUI: 'hide' })?.catch?.(() => {})
   } catch {}
 }, { passive: true, once: true })
 

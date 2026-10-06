@@ -57,45 +57,9 @@
       padding: 0;
     }
     #mute-btn:active { opacity: 0.7; }
-
-    #rotate-overlay {
-      display: none;
-      position: fixed;
-      inset: 0;
-      z-index: 9999;
-      background: #080818;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 24px;
-      font-family: 'Press Start 2P', monospace;
-      color: #FFD700;
-      text-align: center;
-      padding: 24px;
-    }
-    #rotate-overlay .icon {
-      font-size: 56px;
-      animation: spin 2s ease-in-out infinite alternate;
-    }
-    #rotate-overlay p {
-      font-size: 9px;
-      line-height: 1.9;
-      color: #aaa;
-    }
-    @keyframes spin {
-      from { transform: rotate(-20deg); }
-      to   { transform: rotate(20deg); }
-    }
-    @media (orientation: portrait) and (pointer: coarse) and (max-width: 600px) {
-      #rotate-overlay { display: flex; }
-    }
   </style>
 </head>
 <body>
-  <div id="rotate-overlay">
-    <div class="icon">📱</div>
-    <p>TURN YOUR PHONE<br>SIDEWAYS TO PLAY</p>
-  </div>
   <button id="mute-btn" title="Toggle sound" aria-label="Toggle sound">🔊</button>
 
   <script src="https://cdn.jsdelivr.net/npm/phaser@3.88.2/dist/phaser.min.js"></script>

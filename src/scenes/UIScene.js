@@ -1,7 +1,7 @@
 // UIScene — persistent overlay: dialogue box, YES/NO choice, touch controls, hints.
 // Runs above every walkable scene. Everything is laid out from the live game size.
 
-import { FONT, isTouchDevice } from '../layout.js'
+import { FONT, isTouchDevice, getLayout } from '../layout.js'
 import { TouchStick } from '../ui/TouchStick.js'
 
 const TYPE_MS = 26
@@ -26,9 +26,14 @@ export class UIScene extends Phaser.Scene {
     this.keysCancel = [K.X, K.ESC, K.BACKSPACE].map(k => kb.addKey(k))
     this.keysUp = [K.UP, K.W].map(k => kb.addKey(k, false))
     this.keysDown = [K.DOWN, K.S].map(k => kb.addKey(k, false))
+    this.keysSide = [K.LEFT, K.RIGHT].map(k => kb.addKey(k, false))
     this.keysRun = [K.SHIFT, K.X].map(k => kb.addKey(k, false))
 
     this.m = this._metrics()
+    this.deckBg = this.add.graphics().setDepth(100).setVisible(false)
+    this.deckBrand = this.add.text(0, 0, '★ NAMAN ASTHANA ★', {
+      fontFamily: FONT, fontSize: '6px', color: '#3c416e',
+    }).setOrigin(0.5, 1).setDepth(101).setVisible(false)
     this._buildDialogue()
     this._buildChoice()
     if (this.isTouch) {
@@ -60,11 +65,14 @@ export class UIScene extends Phaser.Scene {
   // ─── Layout ───────────────────────────────────────────────────────
 
   _metrics() {
-    const W = this.scale.width, H = this.scale.height
-    const phone = H < 300
+    const { W, H, phone, portrait, deck } = getLayout(this)
+    if (portrait) {
+      const bh = Math.round(Math.min(Math.max(deck.h * 0.5, 96), 128))
+      return { W, H, phone, portrait, deck, box: { x: 6, y: deck.y + 16, w: W - 12, h: bh }, line: 9 }
+    }
     const bh = phone ? 72 : 90
     return {
-      W, H, phone,
+      W, H, phone, portrait, deck,
       box: { x: 5, y: H - bh - 5, w: W - 10, h: bh },
       line: phone ? 9 : 11,
     }
@@ -72,9 +80,37 @@ export class UIScene extends Phaser.Scene {
 
   _layout() {
     this.m = this._metrics()
+    this._drawDeck()
     this._drawDialogueBox()
     this._layoutChoice()
     if (this.isTouch) this._layoutTouch()
+  }
+
+  // ─── Portrait control deck ────────────────────────────────────────
+
+  _drawDeck() {
+    const { deck, W } = this.m
+    const g = this.deckBg.clear()
+    if (!deck) { this._setDeckVisible(this._deckWanted); return }
+    g.fillStyle(0x0d0f20, 1).fillRect(deck.x, deck.y, deck.w, deck.h)
+    g.fillStyle(0x161a33, 1).fillRoundedRect(deck.x + 6, deck.y + 8, deck.w - 12, deck.h - 14, 10)
+    g.fillStyle(0xffd700, 0.85).fillRect(deck.x, deck.y, deck.w, 2)
+    g.fillStyle(0x000000, 0.35).fillRect(deck.x, deck.y + 2, deck.w, 3)
+    // Speaker grille, Game Boy style
+    for (let i = 0; i < 5; i++) {
+      const x = W - 46 + i * 7, y = deck.y + deck.h - 20
+      g.lineStyle(2, 0x22264a, 1).lineBetween(x, y, x + 6, y - 10)
+    }
+    this.deckBrand.setPosition(W / 2, deck.y + deck.h - 10)
+    this._setDeckVisible(this._deckWanted)
+  }
+
+  // The deck only exists in portrait, but remember it's wanted so rotating back restores it
+  _setDeckVisible(on) {
+    this._deckWanted = !!on
+    const show = this._deckWanted && !!this.m.deck
+    this.deckBg.setVisible(show)
+    this.deckBrand.setVisible(show)
   }
 
   // ─── Dialogue box ─────────────────────────────────────────────────
@@ -130,8 +166,10 @@ export class UIScene extends Phaser.Scene {
     this.nameText.setPosition(tx + 11, ty + 5)
   }
 
+  _slideOffset() { return this.m.H - this.m.box.y + 24 }
+
   _showBox() {
-    const off = this.m.box.h + 30
+    const off = this._slideOffset()
     this.tweens.killTweensOf(this.dlg)
     this.dlg.setVisible(true).setY(off)
     this.tweens.add({ targets: this.dlg, y: 0, duration: 170, ease: 'Cubic.Out' })
@@ -141,7 +179,7 @@ export class UIScene extends Phaser.Scene {
     this.tweens.killTweensOf(this.dlg)
     if (immediate) { this.dlg.setVisible(false); onDone?.(); return }
     this.tweens.add({
-      targets: this.dlg, y: this.m.box.h + 30, duration: 130, ease: 'Cubic.In',
+      targets: this.dlg, y: this._slideOffset(), duration: 130, ease: 'Cubic.In',
       onComplete: () => { this.dlg.setVisible(false); onDone?.() },
     })
   }
@@ -271,33 +309,44 @@ export class UIScene extends Phaser.Scene {
   }
 
   _layoutChoice() {
-    const { box, phone } = this.m
-    const w = phone ? 124 : 92, row = phone ? 34 : 22, pad = 6
-    const h = row * 2 + pad * 2
-    const x = box.x + box.w - w, y = box.y - h - 6
-    this._choiceRect = { x, y, w, h, row, pad }
-    const g = this.choiceBg
-    g.clear()
-    g.fillStyle(0x283048, 1).fillRoundedRect(x, y, w, h, 7)
-    g.fillStyle(0xfafaf6, 1).fillRoundedRect(x + 3, y + 3, w - 6, h - 6, 5)
-    g.lineStyle(2, 0x8ca4cc, 1).strokeRoundedRect(x + 6, y + 6, w - 12, h - 12, 4)
-    for (let i = 0; i < 2; i++) {
-      const cy = y + pad + row * i + row / 2
-      this.choiceZones[i].setPosition(x + w / 2, cy).setSize(w - 6, row)
-      this.choiceZones[i].input?.hitArea.setSize(w - 6, row)
-      this.choiceLabels[i].setPosition(x + 30, cy)
+    const { box, phone, portrait, deck } = this.m
+    const g = this.choiceBg.clear()
+    const panel = (x, y, w, h) => {
+      g.fillStyle(0x283048, 1).fillRoundedRect(x, y, w, h, 7)
+      g.fillStyle(0xfafaf6, 1).fillRoundedRect(x + 3, y + 3, w - 6, h - 6, 5)
+      g.lineStyle(2, 0x8ca4cc, 1).strokeRoundedRect(x + 6, y + 6, w - 12, h - 12, 4)
     }
+    if (portrait) {
+      // Two big thumb targets side by side under the dialogue box
+      const y = box.y + box.h + 8
+      const h = Math.min(56, deck.y + deck.h - y - 14), gap = 8
+      const w = (box.w - gap) / 2
+      this._choiceCells = [0, 1].map(i => ({ x: box.x + i * (w + gap), y, w, h }))
+      this._choiceCells.forEach(c => panel(c.x, c.y, c.w, c.h))
+    } else {
+      const w = phone ? 124 : 92, row = phone ? 34 : 22, pad = 6
+      const h = row * 2 + pad * 2
+      const x = box.x + box.w - w, y = box.y - h - 6
+      panel(x, y, w, h)
+      this._choiceCells = [0, 1].map(i => ({ x: x + 6, y: y + pad + row * i, w: w - 12, h: row }))
+    }
+    this._choiceCells.forEach((c, i) => {
+      this.choiceZones[i].setPosition(c.x + c.w / 2, c.y + c.h / 2).setSize(c.w, c.h)
+      this.choiceZones[i].input?.hitArea.setSize(c.w, c.h)
+      const label = this.choiceLabels[i]
+      label.setPosition(c.x + (c.w - label.width) / 2 + 7, c.y + c.h / 2)
+    })
     this._setChoice(this.selectedChoice, true)
   }
 
   _setChoice(i, silent = false) {
     if (!silent && i !== this.selectedChoice) window.audioMgr?.cursor()
     this.selectedChoice = i
-    const { x, y, w, row, pad } = this._choiceRect
-    const cy = y + pad + row * i + row / 2
-    this.choiceCursor.setPosition(x + 14, cy)
+    const c = this._choiceCells[i], label = this.choiceLabels[i]
+    const inset = this.m.portrait ? 6 : 2
+    this.choiceCursor.setPosition(label.x - 14, c.y + c.h / 2)
     this.choiceHi.clear()
-    this.choiceHi.fillStyle(0xffe9a8, 1).fillRoundedRect(x + 8, cy - row / 2 + 2, w - 16, row - 4, 4)
+    this.choiceHi.fillStyle(0xffe9a8, 1).fillRoundedRect(c.x + inset, c.y + inset, c.w - inset * 2, c.h - inset * 2, 4)
   }
 
   _showChoice() {
@@ -346,7 +395,7 @@ export class UIScene extends Phaser.Scene {
   _buildTouchControls() {
     this.stick = new TouchStick(this, {
       zone: p => p.x < this.scale.width * 0.5 && !this.dialogueOpen,
-      home: () => ({ x: this.m.phone ? 58 : 66, y: this.scale.height - (this.m.phone ? 58 : 66) }),
+      home: () => this._stickHome ?? { x: 60, y: this.scale.height - 60 },
       radius: 34,
       onChange: dir => {
         this.game.registry.set('joyDir', dir)
@@ -407,14 +456,24 @@ export class UIScene extends Phaser.Scene {
   }
 
   _layoutTouch() {
-    const { W, H, phone } = this.m
-    const rA = phone ? 25 : 28, rB = phone ? 19 : 22
-    const ax = W - (phone ? 48 : 56), ay = H - (phone ? 66 : 76)
-    const bx = ax - (phone ? 58 : 66), by = ay + (phone ? 26 : 30)
+    const { W, H, phone, portrait, deck } = this.m
+    let rA, rB, ax, ay, bx, by, stickR
+    if (portrait) {
+      const cy = deck.y + deck.h * 0.5
+      rA = 28; rB = 22; stickR = 40
+      ax = W - 50; ay = cy - 10
+      bx = ax - 64; by = cy + 22
+      this._stickHome = { x: 66, y: cy + 4 }
+    } else {
+      rA = phone ? 25 : 28; rB = phone ? 19 : 22; stickR = phone ? 34 : 38
+      ax = W - (phone ? 48 : 56); ay = H - (phone ? 66 : 76)
+      bx = ax - (phone ? 58 : 66); by = ay + (phone ? 26 : 30)
+      this._stickHome = { x: phone ? 58 : 66, y: H - (phone ? 58 : 66) }
+    }
     this._placeButton(this.btnA, ax, ay, rA)
     this._placeButton(this.btnB, bx, by, rB)
     this.talkCue.setPosition(ax, ay - rA - 9)
-    this.stick.radius = phone ? 34 : 38
+    this.stick.radius = stickR
     this.stick._drawBase()
     this.stick._drawThumb(false)
     this.stick.relayout()
@@ -459,6 +518,7 @@ export class UIScene extends Phaser.Scene {
   // ─── First-time control hints ─────────────────────────────────────
 
   _onWorldEnter(key) {
+    this._setDeckVisible(true)
     if (!this.dialogueOpen) this._setControlsVisible(true)
     if (this._coached || key !== 'GameScene') return
     this._coached = true
@@ -478,7 +538,11 @@ export class UIScene extends Phaser.Scene {
       const c = this.add.container(x + (origin === 0 ? bw / 2 : origin === 1 ? -bw / 2 : 0), y, [g, t]).setDepth(190).setAlpha(0)
       items.push(c)
     }
-    if (this.isTouch) {
+    if (this.isTouch && this.m.portrait) {
+      const top = this.m.deck.y + 22
+      pill(10, top, 'DRAG HERE\nTO WALK', 0)
+      pill(W - 10, top, 'A  TALK\nHOLD B  RUN', 1)
+    } else if (this.isTouch) {
       pill(10, H - (phone ? 118 : 130), 'DRAG HERE\nTO WALK', 0)
       pill(W - 10, H - (phone ? 128 : 144), 'A  TALK\nHOLD B  RUN', 1)
     } else {
@@ -526,8 +590,8 @@ export class UIScene extends Phaser.Scene {
     if (this.keysAction.some(k => JD(k))) this._onAction()
     if (this.keysCancel.some(k => JD(k))) this._onCancel()
     if (this.inChoice) {
-      if (this.keysUp.some(k => JD(k))) this._setChoice(0)
-      if (this.keysDown.some(k => JD(k))) this._setChoice(1)
+      if (this.keysUp.some(k => JD(k)) || JD(this.keysSide[0])) this._setChoice(0)
+      if (this.keysDown.some(k => JD(k)) || JD(this.keysSide[1])) this._setChoice(1)
     }
   }
 }
