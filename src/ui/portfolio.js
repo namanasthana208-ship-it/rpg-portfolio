@@ -1,6 +1,8 @@
 // Portfolio overlay — HTML on top of the canvas so text is real, selectable and scrollable.
 
 const PX = "'Press Start 2P', monospace"
+const RESUME_URL = 'assets/Naman_Asthana_Resume.pdf'
+const RESUME_FILE = 'Naman_Asthana_Resume.pdf'
 const BODY = "'VT323', 'Courier New', monospace"
 
 const TABS = [
@@ -102,15 +104,16 @@ const SKILLS = `
   <h4 class="pf-section"><span>EXECUTION</span></h4>
   <p class="pf-quote">&ldquo;I can get things done.&rdquo;</p>`
 
-const contactCard = (label, value, href) => `
-  <a class="pf-link-card" href="${href}" ${href.startsWith('http') ? 'target="_blank" rel="noopener"' : ''}>
+const contactCard = (label, value, href, { download, icon = '&#8599;', cls = '' } = {}) => `
+  <a class="pf-link-card ${cls}" href="${href}" ${download ? `download="${download}"` : ''} ${href.startsWith('http') ? 'target="_blank" rel="noopener"' : ''}>
     <span class="pf-link-body"><span class="pf-link-label">${label}</span><span class="pf-link-value">${value}</span></span>
-    <span class="pf-link-arrow" aria-hidden="true">&#8599;</span>
+    <span class="pf-link-arrow" aria-hidden="true">${icon}</span>
   </a>`
 
 const CONTACT = `
   <p class="pf-lead">Let&rsquo;s talk.</p>
   <div class="pf-contact">
+    ${contactCard('RESUME', 'Download PDF', RESUME_URL, { download: RESUME_FILE, icon: '&#8595;', cls: 'pf-resume-card' })}
     ${contactCard('LINKEDIN', 'linkedin.com/in/naman-asthana-a1874722a', 'https://linkedin.com/in/naman-asthana-a1874722a')}
     ${contactCard('EMAIL', 'namanasthana208@gmail.com', 'mailto:namanasthana208@gmail.com')}
     ${contactCard('PHONE', '+91 9161211377', 'tel:+919161211377')}
@@ -139,6 +142,12 @@ const CSS = `
   background:transparent;border:2px solid #ffd700;color:#ffd700;font:13px ${PX};cursor:pointer;transition:background .15s,transform .1s}
 #pf-close:hover,#pf-close:focus-visible{background:rgba(255,215,0,.14);outline:none}
 #pf-close:active{transform:scale(.92)}
+#pf-resume{flex-shrink:0;height:46px;display:flex;align-items:center;gap:8px;padding:0 14px;text-decoration:none;
+  background:#ffd700;border:2px solid #ffd700;color:#0b0b1f;font:9px ${PX};cursor:pointer;transition:background .15s,transform .1s}
+#pf-resume:hover,#pf-resume:focus-visible{background:#ffe55c;outline:none}
+#pf-resume:active{transform:scale(.94)}
+#pf-resume .ico{font-size:13px;line-height:1}
+.pf-resume-card{border-color:#ffd700;background:rgba(255,215,0,.08)}
 #pf-tabs{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:2px solid rgba(255,215,0,.22);flex-shrink:0}
 .pf-tab{position:relative;min-height:48px;padding:12px 4px;background:none;border:0;border-right:1px solid rgba(255,215,0,.12);
   color:#8c8cba;font:9px/1.3 ${PX};cursor:pointer;transition:color .15s,background .15s}
@@ -185,11 +194,13 @@ const CSS = `
   #pf-avatar{width:34px;height:34px}
   #pf-name{font-size:11px}
   #pf-sub{font-size:17px;margin-top:1px}
+  #pf-resume{height:44px;padding:0 10px}
   .pf-tab{min-height:42px;padding:8px 2px;font-size:8px}
   .pf-pane{padding:14px max(18px,env(safe-area-inset-right)) 26px max(18px,env(safe-area-inset-left))}
   .pf-list li{font-size:20px}
 }
-@media (max-width:460px){.pf-tab{font-size:7px}#pf-name{font-size:11px}}
+@media (max-width:460px){.pf-tab{font-size:7px}#pf-name{font-size:11px}#pf-resume .lbl-long{display:none}}
+@media (min-width:461px){#pf-resume .lbl-short{display:none}}
 `
 
 export function openPortfolio({ tab = 'exp', game, onClose }) {
@@ -207,6 +218,9 @@ export function openPortfolio({ tab = 'exp', game, onClose }) {
           <h2 id="pf-name">NAMAN ASTHANA</h2>
           <p id="pf-sub">Growth Associate @ DG3 &middot; Lucknow, India</p>
         </div>
+        <a id="pf-resume" href="${RESUME_URL}" download="${RESUME_FILE}" aria-label="Download resume (PDF)">
+          <span class="ico" aria-hidden="true">&#8595;</span><span class="lbl-long">RESUME</span><span class="lbl-short">CV</span>
+        </a>
         <button id="pf-close" aria-label="Close portfolio">&#x2715;</button>
       </header>
       <nav id="pf-tabs" role="tablist">
@@ -267,6 +281,7 @@ export function openPortfolio({ tab = 'exp', game, onClose }) {
   }
 
   root.querySelector('#pf-close').addEventListener('click', () => close())
+  root.querySelectorAll(`a[href="${RESUME_URL}"]`).forEach(a => a.addEventListener('click', () => window.audioMgr?.confirm()))
   root.addEventListener('click', e => { if (e.target === root) close() })
   document.addEventListener('keydown', onKey, true)
   try { history.pushState({ pf: true }, '') } catch {}
