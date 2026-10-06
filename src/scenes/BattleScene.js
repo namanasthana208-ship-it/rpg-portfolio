@@ -1,593 +1,526 @@
-const FONT  = "'Press Start 2P', monospace"
-const W     = 480
-const H     = 320
-const FIELD_H = 195   // battle field area height
-const BOX_Y   = FIELD_H + 3
+// The wild encounter: flash → diagonal wipe → shutters open → Naman slides in as a
+// silhouette, colours in with a cry → "A wild NAMAN appeared!" → 2×2 battle menu.
+
+import { FONT, isTouchDevice } from '../layout.js'
+import { TouchStick } from '../ui/TouchStick.js'
+import { openPortfolio } from '../ui/portfolio.js'
+
+const OPTIONS = [
+  { label: 'PORTFOLIO', tab: 'exp' },
+  { label: 'SKILLS', tab: 'skills' },
+  { label: 'CONTACT', tab: 'contact' },
+  { label: 'RUN', run: true },
+]
 
 export class BattleScene extends Phaser.Scene {
   constructor() { super({ key: 'BattleScene' }) }
 
   init(data) {
-    this.fromScene    = data.from ?? 'ChamberScene'
-    this.selectedOpt  = 0
-    this.menuActive   = false
-    this.awaitingTap  = false
-    this.textBoxBuilt = false
-    this.isTouch      = false
-    this._typeTimer   = null
+    this.fromScene = data.from ?? 'ChamberScene'
+    this.sel = 0
+    this.menuActive = false
+    this.awaiting = null
+    this.isTouch = isTouchDevice()
+    this._typeTimer = null
+    this._ready = false
   }
 
   create() {
-    this.isTouch = this.sys.game.device.input.touch
+    const K = Phaser.Input.Keyboard.KeyCodes
+    const kb = this.input.keyboard
+    this.kAction = [K.Z, K.ENTER, K.SPACE].map(k => kb.addKey(k))
+    this.kDir = {
+      up: [K.UP, K.W].map(k => kb.addKey(k)), down: [K.DOWN, K.S].map(k => kb.addKey(k)),
+      left: [K.LEFT, K.A].map(k => kb.addKey(k)), right: [K.RIGHT, K.D].map(k => kb.addKey(k)),
+    }
 
-    // Keyboard
-    this.keyZ     = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Z)
-    this.keyEnter = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER)
-    this.keyUp    = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.UP)
-    this.keyDown  = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.DOWN)
-    this.keyW     = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W)
-    this.keyS     = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S)
-
-    // Full black bg
-    this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 1).setDepth(0)
-
-    // Touch: advance dialogue when awaitingTap
-    this.input.on('pointerdown', () => {
-      if (this.awaitingTap) {
-        this.awaitingTap = false
-        this._hideTapHint()
-        this._showMenu()
-      }
+    this.input.on('pointerdown', () => this._advanceIfWaiting())
+    this.scale.on('resize', this._layout, this)
+    this.events.once('shutdown', () => {
+      this.scale.off('resize', this._layout, this)
+      this.stick?.destroy()
     })
 
-    // Start sequence
-    this._playFlash(() => this._playWipe(() => this._showBattle()))
+    // Battle music hits the instant the encounter starts
+    window.audioMgr?.playBattle()
+    this._flash(() => this._wipe(() => {
+      this.scene.sleep(this.fromScene)
+      this._build()
+      this._intro()
+    }))
   }
 
-  // ─── Flash ────────────────────────────────────────────────────────
+  // ─── Metrics ──────────────────────────────────────────────────────
 
-  _playFlash(onDone) {
-    const flash = this.add.rectangle(W / 2, H / 2, W, H, 0xffffff, 1).setDepth(98)
+  _metrics() {
+    const W = this.scale.width, H = this.scale.height
+    const phone = H < 300
+    const TB = phone ? 72 : 88
+    const FH = H - TB
+    const nH = Math.round(FH * 0.84)
+    return {
+      W, H, phone, TB, FH, nH,
+      ex: Math.round(W * 0.7), ey: Math.round(FH * 0.93),
+      px: Math.round(W * 0.22), pScale: phone ? 4 : 5,
+      menuW: phone ? Math.min(Math.round(W * 0.56), 300) : 236,
+    }
+  }
+
+  // ─── Encounter transition ─────────────────────────────────────────
+
+  _flash(done) {
+    const { width: W, height: H } = this.scale
+    const f = this.add.rectangle(0, 0, W, H, 0xffffff, 0).setOrigin(0).setDepth(98)
     let n = 0
-    const on  = () => { flash.setAlpha(1); this.time.delayedCall(75, off) }
+    const on = () => { f.setAlpha(0.9); this.time.delayedCall(65, off) }
     const off = () => {
-      flash.setAlpha(0); n++
-      if (n < 3) this.time.delayedCall(75, on)
-      else       this.time.delayedCall(80, onDone)
+      f.setAlpha(0); n++
+      if (n < 3) this.time.delayedCall(65, on)
+      else { f.destroy(); this.time.delayedCall(60, done) }
     }
     on()
   }
 
-  // ─── Wipe transition ──────────────────────────────────────────────
-
-  _playWipe(onDone) {
-    const BARS  = 14
-    const barH  = Math.ceil(H / BARS)
-    const g     = this.add.graphics().setDepth(90)
+  _wipe(done) {
+    const { width: W, height: H } = this.scale
+    const g = this.add.graphics().setDepth(97)
+    const slope = 0.6, span = W + H * slope, bars = 9, gap = span / bars
+    const dur = 620
+    window.audioMgr?.whoosh()
     let elapsed = 0
-
-    const timer = this.time.addEvent({
+    const tick = this.time.addEvent({
       delay: 16, loop: true,
       callback: () => {
         elapsed += 16
-        const p = Math.min(elapsed / 720, 1)
         g.clear()
-
-        for (let i = 0; i < BARS; i++) {
-          const fromLeft  = i % 2 === 0
-          const barDelay  = (i / BARS) * 0.45
-          const rawP      = (p - barDelay) / 0.55
-          const barP      = Math.max(0, Math.min(1, rawP))
-          const eased     = barP < 0.5 ? 2*barP*barP : 1 - Math.pow(-2*barP+2, 2)/2
-          const barW      = eased * W
-          const x         = fromLeft ? 0 : W - barW
-          const y         = i * barH
-          // Alternating black / white bars
-          g.fillStyle(i % 4 < 2 ? 0x000000 : 0xffffff, 1)
-          g.fillRect(x, y, barW, barH)
-        }
-
-        if (p >= 1) {
-          timer.remove()
-          g.clear()
+        let complete = true
+        for (let i = 0; i < bars; i++) {
+          const local = Phaser.Math.Clamp((elapsed - i * 38) / (dur - bars * 38), 0, 1)
+          if (local < 1) complete = false
+          const w = Phaser.Math.Easing.Cubic.InOut(local) * (gap + 1)
+          const x0 = i * gap
           g.fillStyle(0x000000, 1)
-          g.fillRect(0, 0, W, H)
-          this.time.delayedCall(180, () => { g.destroy(); onDone() })
+          g.fillPoints([
+            { x: x0, y: 0 }, { x: x0 + w, y: 0 },
+            { x: x0 + w - H * slope, y: H }, { x: x0 - H * slope, y: H },
+          ], true)
+          if (local > 0 && local < 1) {
+            g.lineStyle(2, 0xffffff, 0.8)
+            g.lineBetween(x0 + w, 0, x0 + w - H * slope, H)
+          }
+        }
+        if (complete) {
+          tick.remove()
+          g.clear().fillStyle(0x000000, 1).fillRect(0, 0, W, H)
+          this.time.delayedCall(140, () => { g.destroy(); done() })
         }
       },
     })
   }
 
-  // ─── Battle screen ────────────────────────────────────────────────
+  // ─── Build the battle screen ──────────────────────────────────────
 
-  _showBattle() {
-    // Battle field bg — light gray like HGSS
-    this.add.rectangle(W/2, FIELD_H/2, W, FIELD_H, 0xe8ecf0, 1).setDepth(1)
+  _build() {
+    this.bg = this.add.graphics().setDepth(0)
+    this.platEnemy = this.add.graphics().setDepth(2)
+    this.platPlayer = this.add.graphics().setDepth(2)
 
-    // Subtle perspective lines on field
-    const lg = this.add.graphics().setDepth(2)
-    lg.lineStyle(1, 0xc8ccd0, 0.7)
-    for (let y = 60; y < FIELD_H - 20; y += 14) lg.lineBetween(0, y, W, y)
-
-    // Battle music starts when the battle screen appears
-    window.audioMgr?.playBattle()
-
-    // Naman sprite slides in from right
     const tex = this.textures.get('naman_battle')
-    const natW = tex.source[0].width
-    const natH = tex.source[0].height
-    const maxH = 170
-    const scale = maxH / natH
-    const sprW = natW * scale
-    const targetX = W - 24 - sprW / 2
-    const sprY = FIELD_H - 12 - maxH / 2
+    this._bbox = tex.customData.bbox ?? (tex.customData.bbox = figureBounds(tex.getSourceImage()))
+    const b = this._bbox, src = tex.getSourceImage()
+    const ox = (b.x + b.w / 2) / src.width, oy = (b.y + b.h) / src.height
+    this.naman = this.add.image(0, 0, 'naman_battle').setOrigin(ox, oy).setDepth(10)
+    this.namanSil = this.add.image(0, 0, 'naman_battle').setOrigin(ox, oy).setDepth(11).setTintFill(0x14142a)
 
-    this.namanSprite = this.add.image(W + sprW, sprY, 'naman_battle')
-      .setScale(scale).setDepth(10)
+    this.hero = this.add.sprite(0, 0, 'player', 'up_0').setOrigin(0.5, 26 / 32).setDepth(12)
 
-    // Oval platform (like Pokemon HGSS)
-    const platCX = targetX, platCY = FIELD_H - 22, platRX = sprW * 0.5, platRY = 12
-    const pg2 = this.add.graphics().setDepth(3)
-    pg2.fillStyle(0xa8b8c8, 1)
-    pg2.fillEllipse(platCX, platCY, platRX * 2, platRY * 2)
-    pg2.fillStyle(0xc8d8e8, 1)
-    pg2.fillEllipse(platCX, platCY - 3, platRX * 2 - 8, platRY * 2 - 5)
+    this.info = this.add.container(0, 0).setDepth(15)
+    this.infoBg = this.add.graphics()
+    this.infoName = this.add.text(0, 0, 'NAMAN', { fontFamily: FONT, fontSize: '9px', color: '#383848' })
+      .setShadow(1, 1, '#d4d4cc', 0, false, true)
+    this.infoLv = this.add.text(0, 0, 'Lv99', { fontFamily: FONT, fontSize: '7px', color: '#383848' }).setOrigin(1, 0)
+    this.infoHp = this.add.text(0, 0, 'HP', { fontFamily: FONT, fontSize: '6px', color: '#f8c030' })
+      .setShadow(1, 1, '#583800', 0, false, true)
+    this.info.add([this.infoBg, this.infoName, this.infoLv, this.infoHp])
 
-    this.namanSprite.setY(sprY)
-    this.tweens.add({
-      targets: this.namanSprite, x: targetX, duration: 500, ease: 'Power2',
-      onComplete: () => {
-        this._buildTextBox()
-        this._typeText('A wild NAMAN appeared!', () => {
-          this.awaitingTap = true
-          this._showTapHint()
-          this.time.delayedCall(2000, () => {
-            if (this.awaitingTap) {
-              this.awaitingTap = false
-              this._hideTapHint()
-              this._showMenu()
-            }
-          })
-        })
-      },
+    this.box = this.add.graphics().setDepth(20)
+    this.text = this.add.text(0, 0, '', { fontFamily: FONT, fontSize: '10px', color: '#ffffff' })
+      .setDepth(21).setShadow(1, 1, '#38406a', 0, false, true)
+    this.arrow = this.add.graphics().setDepth(22).setVisible(false)
+    this.arrow.fillStyle(0xf8d048, 1).fillTriangle(-5, -3, 5, -3, 0, 4)
+
+    this.menu = this.add.container(0, 0).setDepth(30).setVisible(false)
+    this.menuBg = this.add.graphics()
+    this.menu.add(this.menuBg)
+    this.cells = OPTIONS.map((opt, i) => {
+      const bg = this.add.graphics()
+      const label = this.add.text(0, 0, opt.label, {
+        fontFamily: FONT, fontSize: '9px', color: opt.run ? '#b83030' : '#383848',
+      }).setOrigin(0, 0.5).setShadow(1, 1, '#d4d4cc', 0, false, true)
+      const cursor = this.add.text(0, 0, '▶', { fontFamily: FONT, fontSize: '8px', color: '#e04848' }).setOrigin(0, 0.5)
+      const zone = this.add.rectangle(0, 0, 10, 10, 0xffffff, 0.001).setOrigin(0).setInteractive({ useHandCursor: true })
+      zone.on('pointerdown', (p, lx, ly, e) => {
+        if (!this.menuActive) return
+        e?.stopPropagation()
+        this._pressed = i
+        this._select(i)
+      })
+      zone.on('pointerup', () => { if (this.menuActive && this._pressed === i) this._confirm() })
+      zone.on('pointerover', () => { if (this.menuActive && !this.isTouch) this._select(i) })
+      this.menu.add([bg, zone, cursor, label])
+      return { bg, label, cursor, zone }
+    })
+
+    this.cover = this.add.graphics().setDepth(96)
+    this._layout()
+  }
+
+  _layout() {
+    if (!this.bg) return
+    const m = this.m = this._metrics()
+    const { W, H, FH, TB, phone } = m
+
+    // Sky + field
+    const g = this.bg.clear()
+    const horizon = Math.round(FH * 0.52)
+    bands(g, 0, horizon, [0x9cc4ea, 0xe6f0f8], 16, W)
+    g.fillStyle(0xb8d0a8, 1).fillRect(0, horizon - 6, W, 6)
+    bands(g, horizon, FH, [0xd2e2b0, 0xa8c488], 10, W)
+    g.lineStyle(1, 0xffffff, 0.22)
+    for (let y = horizon + 10, step = 6; y < FH; y += step, step += 3) g.lineBetween(0, y, W, y)
+
+    // Enemy platform + Naman
+    const scale = m.nH / this._bbox.h
+    const rx = Math.max(56, m.nH * 0.36), ry = rx * 0.22
+    drawPlatform(this.platEnemy, rx, ry)
+    this.platEnemy.setPosition(m.ex, m.ey - 2)
+    this.naman.setScale(scale).setPosition(m.ex, m.ey)
+    this.namanSil.setScale(scale).setPosition(m.ex, m.ey)
+    this._namanX = m.ex
+
+    // Player back sprite
+    const prx = 16 * m.pScale * 1.5
+    drawPlatform(this.platPlayer, prx, prx * 0.22)
+    this.platPlayer.setPosition(m.px, FH - 2)
+    this.hero.setScale(m.pScale).setPosition(m.px, FH + (phone ? 10 : 14))
+    this._heroX = m.px
+
+    // Enemy info box
+    const iw = phone ? 150 : 172, ih = phone ? 38 : 42
+    const ig = this.infoBg.clear()
+    ig.fillStyle(0x283048, 1).fillRoundedRect(0, 0, iw, ih, 6)
+    ig.fillStyle(0xf8f8f0, 1).fillRoundedRect(3, 3, iw - 6, ih - 6, 4)
+    const barX = 30, barY = ih - 14, barW = iw - 42
+    ig.fillStyle(0x283048, 1).fillRoundedRect(barX - 2, barY - 2, barW + 4, 8, 3)
+    ig.fillStyle(0x58d878, 1).fillRect(barX, barY, barW, 4)
+    ig.fillStyle(0x88f0a0, 1).fillRect(barX, barY, barW, 1)
+    this.infoName.setPosition(10, 8)
+    this.infoLv.setPosition(iw - 10, 9)
+    this.infoHp.setPosition(12, barY - 1)
+    this.info.setPosition(10, 10)
+    this._infoX = 10
+    this._infoW = iw
+
+    // Text box
+    const bx = this.box.clear()
+    bx.fillStyle(0x1c2238, 1).fillRect(0, FH, W, TB)
+    bx.fillStyle(0x2c3a64, 1).fillRoundedRect(4, FH + 4, W - 8, TB - 8, 6)
+    bx.lineStyle(2, 0xa8b8e0, 1).strokeRoundedRect(7, FH + 7, W - 14, TB - 14, 4)
+    this.text.setPosition(18, FH + 18).setLineSpacing(phone ? 8 : 10)
+    this._wrap()
+    this.tweens.killTweensOf(this.arrow)
+    this.arrow.setPosition(W - 22, H - 18)
+    this.tweens.add({ targets: this.arrow, y: H - 15, duration: 280, yoyo: true, repeat: -1, ease: 'Sine.InOut' })
+
+    // 2×2 menu
+    const mw = m.menuW, mh = TB - 8, mx = W - mw - 4, my = FH + 4
+    const mg = this.menuBg.clear()
+    mg.fillStyle(0x283048, 1).fillRoundedRect(mx, my, mw, mh, 6)
+    mg.fillStyle(0xf8f8f0, 1).fillRoundedRect(mx + 3, my + 3, mw - 6, mh - 6, 4)
+    const pad = 6, gap = 4
+    const cw = (mw - pad * 2 - gap) / 2, ch = (mh - pad * 2 - gap) / 2
+    this.cells.forEach((c, i) => {
+      const x = mx + pad + (i % 2) * (cw + gap), y = my + pad + Math.floor(i / 2) * (ch + gap)
+      c.rect = { x, y, w: cw, h: ch }
+      c.zone.setPosition(x, y).setSize(cw, ch)
+      c.zone.input.hitArea.setSize(cw, ch)
+      c.cursor.setPosition(x + 6, y + ch / 2)
+      c.label.setPosition(x + 18, y + ch / 2)
+    })
+    this._drawCells()
+
+    if (this.isTouch && !this.stick) {
+      this.stick = new TouchStick(this, {
+        zone: p => this.menuActive && p.x < this.scale.width * 0.45,
+        home: () => ({ x: 60, y: this.scale.height - 60 }),
+        radius: 30, showIdle: false, depth: 40,
+        onChange: dir => { if (dir && this.menuActive) this._move(dir) },
+      })
+    }
+  }
+
+  _wrap() {
+    const right = this.menu?.visible ? this.m.menuW + 30 : 40
+    this.text.setWordWrapWidth(this.m.W - 18 - right)
+  }
+
+  _drawCells(flash = -1) {
+    this.cells.forEach((c, i) => {
+      const { x, y, w, h } = c.rect
+      const on = i === this.sel
+      c.bg.clear()
+      if (on) {
+        c.bg.fillStyle(i === flash ? 0xffffff : 0xffecb0, 1).fillRoundedRect(x, y, w, h, 4)
+        c.bg.lineStyle(2, 0xe0a030, 1).strokeRoundedRect(x + 1, y + 1, w - 2, h - 2, 4)
+      } else {
+        c.bg.lineStyle(1, 0xd8d8e4, 1).strokeRoundedRect(x + 1, y + 1, w - 2, h - 2, 4)
+      }
+      c.cursor.setVisible(on)
     })
   }
 
-  // ─── Text box ─────────────────────────────────────────────────────
+  // ─── Intro choreography ───────────────────────────────────────────
 
-  _buildTextBox() {
-    if (this.textBoxBuilt) return
-    this.textBoxBuilt = true
-    const bg = this.add.graphics().setDepth(20)
-    bg.fillStyle(0xffffff, 1)
-    bg.fillRect(0, BOX_Y, W, H - BOX_Y)
-    bg.lineStyle(3, 0x1a1a3a, 1)
-    bg.strokeRect(3, BOX_Y + 3, W - 6, H - BOX_Y - 6)
-    this.textObj = this.add.text(16, BOX_Y + 14, '', {
-      fontFamily: FONT, fontSize: '9px', color: '#000000',
-      wordWrap: { width: W - 180 },
-    }).setDepth(21)
-  }
+  _intro() {
+    const { W, H } = this.m
+    // Shutters: black halves part vertically to reveal the field
+    const top = this.add.rectangle(0, 0, W, H / 2 + 1, 0x000000).setOrigin(0).setDepth(96)
+    const bot = this.add.rectangle(0, H / 2, W, H / 2 + 1, 0x000000).setOrigin(0).setDepth(96)
+    this.tweens.add({ targets: top, y: -H / 2, duration: 380, ease: 'Cubic.InOut', onComplete: () => top.destroy() })
+    this.tweens.add({ targets: bot, y: H, duration: 380, ease: 'Cubic.InOut', onComplete: () => bot.destroy() })
 
-  _showTapHint() {
-    this._tapHint = this.add.text(W - 20, H - 16, '▼', {
-      fontFamily: FONT, fontSize: '8px', color: '#000000',
-    }).setOrigin(1, 1).setDepth(22)
-    this.tweens.add({
-      targets: this._tapHint, alpha: 0, duration: 500,
-      ease: 'Linear', yoyo: true, repeat: -1,
+    // Naman glides in from the right as a silhouette; the player from the left
+    const slide = W * 0.75
+    for (const o of [this.naman, this.namanSil, this.platEnemy]) {
+      const tx = o.x
+      o.x = tx + slide
+      this.tweens.add({ targets: o, x: tx, duration: 900, ease: 'Cubic.Out', delay: 60 })
+    }
+    for (const o of [this.hero, this.platPlayer]) {
+      const tx = o.x
+      o.x = tx - slide
+      this.tweens.add({ targets: o, x: tx, duration: 900, ease: 'Cubic.Out', delay: 60 })
+    }
+    this.info.x = -this._infoW - 20
+
+    this.time.delayedCall(1020, () => {
+      // Colour floods in, with a cry and a jolt
+      window.audioMgr?.cry()
+      this.cameras.main.shake(180, 0.008)
+      this.namanSil.setTintFill(0xffffff).setAlpha(1)
+      this.tweens.add({ targets: this.namanSil, alpha: 0, duration: 380, ease: 'Sine.Out' })
+      this.tweens.add({ targets: this.naman, scaleX: this.naman.scaleX * 1.04, scaleY: this.naman.scaleY * 1.04, duration: 110, yoyo: true, ease: 'Sine.Out' })
+    })
+    this.time.delayedCall(1380, () => {
+      this.tweens.add({ targets: this.info, x: this._infoX, duration: 260, ease: 'Back.Out' })
+    })
+    this.time.delayedCall(1700, () => {
+      this._ready = true
+      this._breathe()
+      this._type('A wild NAMAN appeared!', () => this._wait(2000, () => this._showMenu()), 34)
     })
   }
 
-  _hideTapHint() {
-    if (this._tapHint) { this._tapHint.destroy(); this._tapHint = null }
+  _breathe() {
+    const s = this.naman.scaleY
+    this.tweens.add({ targets: this.naman, scaleY: s * 1.012, duration: 1100, yoyo: true, repeat: -1, ease: 'Sine.InOut' })
   }
 
-  _typeText(msg, onDone) {
-    if (this._typeTimer) { this._typeTimer.remove(); this._typeTimer = null }
-    this.textObj.setText('')
-    let idx = 0
+  // ─── Text helpers ─────────────────────────────────────────────────
+
+  _type(msg, done, speed = 26) {
+    this._typeTimer?.remove()
+    this.arrow.setVisible(false)
+    this.text.setText('')
+    let i = 0
     this._typeTimer = this.time.addEvent({
-      delay: 28, loop: true,
+      delay: speed, loop: true,
       callback: () => {
-        idx++
-        this.textObj.setText(msg.slice(0, idx))
-        if (idx >= msg.length) {
-          this._typeTimer.remove(); this._typeTimer = null
-          if (onDone) onDone()
-        }
+        i++
+        this.text.setText(msg.slice(0, i))
+        if (i % 2 && msg[i - 1] !== ' ') window.audioMgr?.blip()
+        if (i >= msg.length) { this._typeTimer.remove(); this._typeTimer = null; done?.() }
       },
     })
   }
 
-  // ─── Battle menu ──────────────────────────────────────────────────
+  // Wait for A / tap, or move on by itself after `ms`
+  _wait(ms, next) {
+    this.arrow.setVisible(true)
+    const go = () => {
+      if (this.awaiting !== go) return
+      this.awaiting = null
+      this.arrow.setVisible(false)
+      next()
+    }
+    this.awaiting = go
+    this.time.delayedCall(ms, go)
+  }
+
+  _advanceIfWaiting() {
+    if (this.awaiting) { window.audioMgr?.cursor(); this.awaiting() }
+  }
+
+  _seq(steps, done) {
+    const run = i => {
+      if (i >= steps.length) { done?.(); return }
+      const s = steps[i]
+      if (s.fn) s.fn()
+      if (s.text === undefined) { this.time.delayedCall(s.wait ?? 0, () => run(i + 1)); return }
+      if (s.instant) { this.text.setText(s.text); this.time.delayedCall(s.wait ?? 0, () => run(i + 1)); return }
+      this._type(s.text, () => this.time.delayedCall(s.wait ?? 0, () => run(i + 1)), s.speed)
+    }
+    run(0)
+  }
+
+  // ─── Menu ─────────────────────────────────────────────────────────
 
   _showMenu() {
-    this.awaitingTap = false
-    this.menuActive  = true
-    this.textObj.setText('What will\nyou do?')
-    this._buildCursorMenu()
-    if (this.isTouch) this._buildBattleControls()
+    this.text.setText('What will\nyou do?')
+    this.menu.setVisible(true).setAlpha(0)
+    this.menu.y = 8
+    this.tweens.add({ targets: this.menu, alpha: 1, y: 0, duration: 160, ease: 'Cubic.Out' })
+    this._wrap()
+    this._drawCells()
+    this.menuActive = true
   }
 
-  _buildCursorMenu() {
-    const mx = W - 156, my = BOX_Y + 4, mw = 150, mh = H - BOX_Y - 8
-    this.menuBg = this.add.graphics().setDepth(22)
-    this.menuBg.fillStyle(0xffffff, 1)
-    this.menuBg.fillRect(mx, my, mw, mh)
-    this.menuBg.lineStyle(2, 0x1a1a3a, 1)
-    this.menuBg.strokeRect(mx, my, mw, mh)
-
-    const opts = ['EDUCATION', 'EXPERIENCE', 'SKILLS', 'CONTACT', 'RUN']
-    this.menuTexts = opts.map((label, i) =>
-      this.add.text(mx + 14, my + 10 + i * 20, label, {
-        fontFamily: FONT, fontSize: '8px', color: '#000000',
-      }).setDepth(23)
-    )
-    this.menuCursor = this.add.text(mx + 4, my + 10, '►', {
-      fontFamily: FONT, fontSize: '8px', color: '#cc0000',
-    }).setDepth(24)
-    this._updateMenuCursor()
+  _hideMenu() {
+    this.menuActive = false
+    this.tweens.add({ targets: this.menu, alpha: 0, duration: 120, onComplete: () => { this.menu.setVisible(false); this._wrap() } })
   }
 
-  _buildBattleControls() {
-    const depth = 26
-    const JX = 68, JY = H - 46, R = 38, TR = 20
-    this._bJoyBase  = this.add.circle(JX, JY, R, 0x888888, 0.45).setDepth(depth)
-    this._bJoyThumb = this.add.circle(JX, JY, TR, 0xdddddd, 0.7).setDepth(depth + 1)
-    const rexJoy = this.plugins.get('rexVirtualJoystick')
-    if (rexJoy) {
-      this._bJoy = rexJoy.add(this, {
-        x: JX, y: JY, radius: R,
-        base: this._bJoyBase, thumb: this._bJoyThumb,
-        dir: '4dir', forceMin: 14,
-      })
-    }
-    this._bJoyPrevY = 0
-
-    const AX = 164, AY = H - 46
-    this._bBtnA = this.add.circle(AX, AY, 26, 0xdd4444, 0.8).setDepth(depth).setInteractive()
-    this.add.text(AX, AY, 'A', { fontFamily: FONT, fontSize: '12px', color: '#fff' })
-      .setOrigin(0.5).setDepth(depth + 1)
-    this._bBtnA.on('pointerdown', () => {
-      if (this.menuActive) this._selectOption(this.selectedOpt)
-    })
+  _select(i) {
+    if (i === this.sel) return
+    this.sel = i
+    window.audioMgr?.cursor()
+    this._drawCells()
   }
 
-  _updateMenuCursor() {
-    if (!this.menuCursor) return
-    this.menuCursor.setY(BOX_Y + 14 + this.selectedOpt * 20)
+  _move(dir) {
+    const col = this.sel % 2, row = Math.floor(this.sel / 2)
+    if (dir === 'left' || dir === 'right') this._select(row * 2 + (dir === 'right' ? 1 : 0))
+    else this._select((dir === 'down' ? 2 : 0) + col)
   }
 
-  _selectOption(opt) {
+  _confirm() {
     if (!this.menuActive) return
     this.menuActive = false
-
-    const tabs = ['edu', 'exp', 'skills', 'contact']
-    if (opt === 4) {
-      // RUN
-      this._hideMenuUI()
-      this._typeText('...', () => {
-        this.time.delayedCall(1200, () => {
-          this._typeText("You can't run from this.", () => {
-            this.time.delayedCall(1400, () => this._doPortfolio('exp'))
-          })
-        })
-      })
-    } else {
-      this._doPortfolio(tabs[opt])
-    }
+    window.audioMgr?.confirm()
+    navigator.vibrate?.(10)
+    const opt = OPTIONS[this.sel]
+    this._drawCells(this.sel)
+    this.time.delayedCall(70, () => this._drawCells())
+    this.time.delayedCall(140, () => this._drawCells(this.sel))
+    this.time.delayedCall(210, () => {
+      this._hideMenu()
+      if (opt.run) this._run()
+      else if (opt.tab === 'exp') this._seq([
+        { text: 'You used PORTFOLIO!', wait: 450 },
+        { text: "It's super effective!", wait: 650 },
+      ], () => this._openPortfolio('exp'))
+      else if (opt.tab === 'skills') this._seq([
+        { text: "You inspected NAMAN's SKILLS!", wait: 700 },
+      ], () => this._openPortfolio('skills'))
+      else this._seq([
+        { text: "You asked for NAMAN's CONTACT!", wait: 700 },
+      ], () => this._openPortfolio('contact'))
+    })
   }
 
-  _hideMenuUI() {
-    this.menuBg?.destroy()
-    this.menuCursor?.destroy()
-    this.menuTexts?.forEach(t => t.destroy())
-    this._bJoy?.destroy()
-    this._bJoyBase?.destroy()
-    this._bJoyThumb?.destroy()
-    this._bBtnA?.destroy()
-    this._bJoy = this._bJoyBase = this._bJoyThumb = this._bBtnA = null
+  // The game has fun with you: there is no running.
+  _run() {
+    this._seq([
+      { text: '.', instant: true, wait: 550, fn: () => window.audioMgr?.blip() },
+      { text: '. .', instant: true, wait: 550, fn: () => window.audioMgr?.blip() },
+      { text: '. . .', instant: true, wait: 900, fn: () => window.audioMgr?.blip() },
+      {
+        fn: () => {
+          window.audioMgr?.deny()
+          this.cameras.main.shake(260, 0.012)
+          this.tweens.add({ targets: this.naman, x: this._namanX - 10, duration: 70, yoyo: true, repeat: 1 })
+        },
+        text: "You can't run from this.", speed: 42, wait: 1100,
+      },
+      { text: 'NAMAN used PORTFOLIO!', wait: 450 },
+      { text: "It's super effective!", wait: 650 },
+    ], () => this._openPortfolio('exp'))
   }
 
-  _doPortfolio(tab = 'exp') {
-    this._hideMenuUI()
-    window.audioMgr?.stopMusic()
-    this.cameras.main.fadeOut(350, 0, 0, 0)
+  // ─── Portfolio ────────────────────────────────────────────────────
+
+  _openPortfolio(tab) {
+    const { W, H } = this.m
+    const flash = this.add.rectangle(0, 0, W, H, 0xffffff, 1).setOrigin(0).setDepth(99)
+    this.tweens.add({ targets: flash, alpha: 0, duration: 420, onComplete: () => flash.destroy() })
+    this.cover.clear().fillStyle(0x000000, 0.6).fillRect(0, 0, W, H)
+    window.audioMgr?.play('town', { fadeIn: 1.2, fadeOut: 0.6 })
+    this.time.delayedCall(120, () => openPortfolio({ tab, game: this.game, onClose: () => this._return() }))
+  }
+
+  _return() {
+    this.cameras.main.fadeOut(320, 0, 0, 0)
     this.cameras.main.once('camerafadeoutcomplete', () => {
-      this._showPortfolio(tab)
+      this.game.registry.set('inputLock', false)
+      this.game.registry.set('joyDir', null)
+      this.scene.wake(this.fromScene)
+      this.scene.setVisible(true, 'UIScene')
+      this.scene.resume('UIScene')
+      this.scene.stop()
+      const canvas = this.game.canvas
+      setTimeout(() => { canvas.tabIndex = 0; canvas.focus() }, 50)
     })
   }
 
-  // ─── Portfolio overlay ────────────────────────────────────────────
-
-  _showPortfolio(tab = 'exp') {
-    const overlay = document.createElement('div')
-    overlay.id = 'pf-overlay'
-    overlay.innerHTML = this._portfolioHTML()
-    overlay.style.cssText = `
-      position:fixed;top:0;left:0;width:100vw;height:100vh;
-      background:rgba(0,0,0,0.96);z-index:9999;
-      display:flex;justify-content:center;align-items:center;
-      opacity:0;transition:opacity 0.4s;font-family:${FONT};
-    `
-    document.body.appendChild(overlay)
-
-    // Activate the tab that matches the menu option the player chose
-    overlay.querySelectorAll('.pf-tab').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.tab === tab)
-    })
-    overlay.querySelectorAll('.pf-content').forEach(c => {
-      c.classList.toggle('active', c.id === `pf-${tab}`)
-    })
-
-    this.scene.setVisible(false, 'UIScene')
-    requestAnimationFrame(() => { overlay.style.opacity = '1' })
-
-    // Tab switching
-    overlay.querySelectorAll('.pf-tab').forEach(btn => {
-      btn.addEventListener('click', () => {
-        overlay.querySelectorAll('.pf-tab').forEach(b => b.classList.remove('active'))
-        overlay.querySelectorAll('.pf-content').forEach(c => c.classList.remove('active'))
-        btn.classList.add('active')
-        overlay.querySelector(`#pf-${btn.dataset.tab}`).classList.add('active')
-      })
-    })
-
-    // Close
-    const closePortfolio = () => {
-      if (document.activeElement) document.activeElement.blur()
-      overlay.style.opacity = '0'
-      setTimeout(() => {
-        if (overlay.parentNode) overlay.parentNode.removeChild(overlay)
-        this._returnToChamber()
-      }, 420)
-    }
-
-    overlay.querySelector('#pf-close').addEventListener('click', closePortfolio)
-    document.addEventListener('keydown', function escClose(e) {
-      if (e.key === 'Escape') { document.removeEventListener('keydown', escClose); closePortfolio() }
-    })
-  }
-
-  _returnToChamber() {
-    // Clear inputLock before waking so _onWake and UIScene first-update see it false
-    this.game.registry.set('inputLock', false)
-    this.scene.wake('ChamberScene')
-    this.scene.setVisible(true, 'UIScene')
-    this.scene.resume('UIScene')
-    this.scene.stop('BattleScene')
-    // Focus canvas after a tick — scene.stop() triggers input-plugin cleanup which
-    // can steal/drop focus; delaying ensures canvas.focus() wins.
-    const game = this.game
-    setTimeout(() => {
-      game.canvas.tabIndex = 0
-      game.canvas.focus()
-    }, 50)
-  }
-
-  // ─── Input (update) ───────────────────────────────────────────────
+  // ─── Update ───────────────────────────────────────────────────────
 
   update() {
-    const actionJD = Phaser.Input.Keyboard.JustDown(this.keyZ) ||
-                     Phaser.Input.Keyboard.JustDown(this.keyEnter)
+    const JD = Phaser.Input.Keyboard.JustDown
+    if (!this.kAction) return
+    const action = this.kAction.some(k => JD(k))
+    if (this.awaiting && action) { this._advanceIfWaiting(); return }
+    if (!this.menuActive) return
+    for (const dir in this.kDir) if (this.kDir[dir].some(k => JD(k))) this._move(dir)
+    if (action) this._confirm()
+  }
+}
 
-    if (this.awaitingTap && actionJD) {
-      this.awaitingTap = false
-      this._hideTapHint()
-      this._showMenu()
-      return
-    }
+// ─── Drawing helpers ────────────────────────────────────────────────
 
-    if (this.menuActive) {
-      const upJD   = Phaser.Input.Keyboard.JustDown(this.keyUp) || Phaser.Input.Keyboard.JustDown(this.keyW)
-      const downJD = Phaser.Input.Keyboard.JustDown(this.keyDown) || Phaser.Input.Keyboard.JustDown(this.keyS)
-      if (upJD   && this.selectedOpt > 0) { this.selectedOpt--; this._updateMenuCursor() }
-      if (downJD && this.selectedOpt < 4) { this.selectedOpt++; this._updateMenuCursor() }
-      if (actionJD) this._selectOption(this.selectedOpt)
+function bands(g, y0, y1, [c0, c1], n, W) {
+  const a = Phaser.Display.Color.IntegerToColor(c0), b = Phaser.Display.Color.IntegerToColor(c1)
+  const h = (y1 - y0) / n
+  for (let i = 0; i < n; i++) {
+    const c = Phaser.Display.Color.Interpolate.ColorWithColor(a, b, n - 1, i)
+    g.fillStyle(Phaser.Display.Color.GetColor(c.r, c.g, c.b), 1)
+    g.fillRect(0, Math.floor(y0 + i * h), W, Math.ceil(h) + 1)
+  }
+}
 
-      // Joystick up/down (mobile)
-      if (this._bJoy) {
-        const jy = this._bJoy.force > 0 ? this._bJoy.forceY / this._bJoy.radius : 0
-        if (jy < -0.5 && this._bJoyPrevY >= -0.5 && this.selectedOpt > 0) { this.selectedOpt--; this._updateMenuCursor() }
-        if (jy >  0.5 && this._bJoyPrevY <=  0.5 && this.selectedOpt < 4) { this.selectedOpt++; this._updateMenuCursor() }
-        this._bJoyPrevY = jy
+function drawPlatform(g, rx, ry) {
+  g.clear()
+  g.fillStyle(0x6c9054, 1).fillEllipse(0, 2, rx * 2, ry * 2 + 4)
+  g.fillStyle(0x94b874, 1).fillEllipse(0, 0, rx * 2, ry * 2)
+  g.fillStyle(0xb4d494, 1).fillEllipse(0, -ry * 0.25, rx * 1.6, ry * 1.2)
+  g.fillStyle(0x000000, 0.18).fillEllipse(0, 0, rx * 0.7, ry * 0.7)
+}
+
+// Tight bounding box of the opaque figure in the (flood-filled) portrait.
+function figureBounds(img) {
+  const c = document.createElement('canvas')
+  c.width = img.width; c.height = img.height
+  const ctx = c.getContext('2d', { willReadFrequently: true })
+  ctx.drawImage(img, 0, 0)
+  const d = ctx.getImageData(0, 0, c.width, c.height).data
+  let x0 = c.width, y0 = c.height, x1 = 0, y1 = 0
+  for (let y = 0; y < c.height; y += 2) {
+    for (let x = 0; x < c.width; x += 2) {
+      if (d[(y * c.width + x) * 4 + 3] > 0) {
+        if (x < x0) x0 = x; if (x > x1) x1 = x
+        if (y < y0) y0 = y; if (y > y1) y1 = y
       }
     }
   }
-
-  // ─── Portfolio HTML ───────────────────────────────────────────────
-
-  _portfolioHTML() {
-    const css = `
-      <style>
-        #pf-card{background:#080818;border:3px solid #FFD700;box-shadow:inset 0 0 0 1px #FFD70066;
-          width:min(580px,95vw);height:88vh;display:flex;flex-direction:column;
-          position:relative;box-sizing:border-box;overflow:hidden;}
-        #pf-close{position:absolute;top:8px;right:8px;min-width:44px;min-height:44px;
-          background:transparent;border:2px solid #FFD700;color:#FFD700;cursor:pointer;
-          font-family:${FONT};font-size:10px;display:flex;align-items:center;
-          justify-content:center;z-index:10;}
-        #pf-close:hover{background:#FFD70022;}
-        #pf-header{padding:14px 56px 12px 16px;border-bottom:1px solid #FFD70066;flex-shrink:0;}
-        #pf-name{font-size:9px;color:#FFD700;margin-bottom:8px;line-height:1.5;}
-        #pf-sub{font-size:6px;color:#aaaacc;line-height:1.8;}
-        #pf-tabs{display:flex;border-bottom:1px solid #FFD70066;flex-shrink:0;overflow-x:auto;}
-        .pf-tab{flex:1;min-width:80px;padding:10px 4px;background:transparent;border:none;
-          border-right:1px solid #FFD70033;color:#aaaacc;cursor:pointer;
-          font-family:${FONT};font-size:6px;transition:all 0.15s;}
-        .pf-tab:last-child{border-right:none;}
-        .pf-tab:hover{background:#FFD70011;color:#FFD700;}
-        .pf-tab.active{background:#FFD70022;color:#FFD700;border-bottom:2px solid #FFD700;}
-        #pf-body{flex:1;overflow:hidden;position:relative;}
-        .pf-content{position:absolute;inset:0;overflow-y:auto;padding:14px 16px;
-          display:none;-webkit-overflow-scrolling:touch;}
-        .pf-content.active{display:block;}
-        .pf-role{font-size:7px;color:#FFD700;margin:14px 0 4px;line-height:1.6;}
-        .pf-company{font-size:6px;color:#8888aa;margin-bottom:10px;line-height:1.8;}
-        .pf-section{font-size:6px;color:#aaaadd;margin:10px 0 5px;text-transform:uppercase;
-          border-bottom:1px solid #FFD70033;padding-bottom:3px;}
-        .pf-text{font-size:6px;color:#ccccee;line-height:2;margin-bottom:4px;
-          word-break:break-word;overflow-wrap:break-word;}
-        .pf-skill-group{margin-bottom:12px;}
-        .pf-skill-label{font-size:6px;color:#FFD700;margin-bottom:6px;}
-        .pf-skill-items{font-size:6px;color:#aaaacc;line-height:2.2;}
-        .pf-contact-item{font-size:6px;color:#aaaacc;margin-bottom:14px;line-height:2;}
-        .pf-link{color:#FFD700;text-decoration:none;}
-        .pf-link:hover{text-decoration:underline;}
-        .pf-divider{border:none;border-top:1px solid #FFD70033;margin:14px 0;}
-        @media(max-width:420px){
-          #pf-name{font-size:7px;}
-          .pf-role{font-size:6px;}
-          .pf-tab{font-size:5px;padding:8px 2px;}
-        }
-      </style>
-    `
-
-    const exp = `
-      <div class="pf-role">GROWTH ASSOCIATE</div>
-      <div class="pf-company">DG3 (Barter) &nbsp;&middot;&nbsp; Feb 2025 &ndash; Present</div>
-
-      <div class="pf-section">CONTENT</div>
-      <div class="pf-text">Built a football acquisition page on Instagram from zero.</div>
-      <div class="pf-text">368K &rarr; 1.06M &rarr; 1.1M &rarr; 3.7M monthly impressions in 4 months.</div>
-      <div class="pf-text">Peak: 1.99M accounts reached &middot; 461K interactions in one month.</div>
-      <div class="pf-text">Grew DG3's Twitter from 875K to 6M impressions/month in 6 months.</div>
-
-      <div class="pf-section">PAID ACQUISITION</div>
-      <div class="pf-text">Betting ads get blocked everywhere &mdash; so built a surrogate funnel instead.</div>
-      <div class="pf-text">Drove traffic to a free prediction game, captured emails, converted warm leads.</div>
-      <div class="pf-text">$9.5K across Meta, Reddit, YouTube, Telegram &amp; crypto networks &middot; 7 countries.</div>
-      <div class="pf-text">2.1M+ impressions &middot; 1,900+ signups &middot; 1,858 emails collected.</div>
-      <div class="pf-text">Cut CAC from $23.55 &rarr; $6.10 (&minus;74%) by diagnosing UX drop-offs via Clarity and getting the product fixed: OTP flow &rarr; $9 &middot; deep linking &rarr; $7.90 &rarr; $6.10.</div>
-
-      <div class="pf-section">AFFILIATES</div>
-      <div class="pf-text">Ran the affiliate program end to end &mdash; outreach, negotiation, closing, account management.</div>
-      <div class="pf-text">Set up automated DM outreach via InboxApp on X, then personally handled 1,000+ replies through to conversion.</div>
-      <div class="pf-text">Built custom assets per affiliate based on their audience and needs.</div>
-      <div class="pf-text">Channel total: 1,600+ users &middot; $661K+ in trading volume.</div>
-
-      <div class="pf-section">ACTIVATION</div>
-      <div class="pf-text">Led user activation managing a direct report.</div>
-      <div class="pf-text">Built onboarding email journeys and ran win-back campaigns for dormant signups.</div>
-      <div class="pf-text">Monthly activation rate: 20% &rarr; 35%.</div>
-      <div class="pf-text">Email open rates consistently 25%+ &middot; peaks at 35%.</div>
-
-      <div class="pf-section">ANALYTICS &amp; OPS</div>
-      <div class="pf-text">Built Python-automated Excel dashboards covering all DG3 pages &mdash; weekly reporting, UTM attribution, targets tracking.</div>
-      <div class="pf-text">Set up GTM, GA4, and Microsoft Clarity end to end.</div>
-      <div class="pf-text">Wrote PostgreSQL queries for channel-level signup tracking.</div>
-      <div class="pf-text">Traced a UTM-stripping bug to the SPA router and got it fixed.</div>
-
-      <hr class="pf-divider"/>
-
-      <div class="pf-role">MARKETING INTERN</div>
-      <div class="pf-company">DG3 (Barter) &nbsp;&middot;&nbsp; Jun 2024 &ndash; Feb 2025</div>
-      <div class="pf-text">Built a football meme page on Instagram as a top-of-funnel acquisition channel. Ran all of it: strategy, creatives, posting.</div>
-      <div class="pf-text">368K &rarr; 3.7M monthly impressions in 4 months &middot; 1.99M accounts reached at peak.</div>
-      <div class="pf-text">Owned DG3's football content on Twitter end to end.</div>
-      <div class="pf-text">875K &rarr; 6M impressions/month in 6 months &middot; 110 &rarr; 5,000+ followers.</div>
-      <div class="pf-text">Ran Euro 2024 and Wimbledon campaigns across Twitter, Discord and Telegram.</div>
-      <div class="pf-text">Drove $150K+ in betting volume in a single month.</div>
-
-      <hr class="pf-divider"/>
-
-      <div class="pf-role">CONTENT CREATION INTERN</div>
-      <div class="pf-company">The Indian Idiot &nbsp;&middot;&nbsp; Feb 2023 &ndash; Apr 2024</div>
-      <div class="pf-text">One of 3 interns working directly under the founder.</div>
-      <div class="pf-text">1M+ follower Instagram community.</div>
-      <div class="pf-text">Wrote 150+ posts reaching 100M+ accounts.</div>
-      <div class="pf-text">Brands: Netflix, Prime Video, Spotify, Flipkart, Indeed and 15+ others.</div>
-      <div class="pf-text">Led ground-up campaigns for Masters&rsquo; Union and ISBF.</div>
-      <div class="pf-text">Analysed 5,000+ user responses across 15 posts to build UGC strategy.</div>
-    `
-
-    const edu = `
-      <div class="pf-role">BACHELOR OF COMMERCE</div>
-      <div class="pf-company">National PG College &nbsp;&middot;&nbsp; 2021 &ndash; 2024</div>
-      <hr class="pf-divider"/>
-      <div class="pf-role">ISC CLASS XII &nbsp;&mdash;&nbsp; 91%</div>
-      <div class="pf-role" style="margin-top:8px;">ICSE CLASS X &nbsp;&mdash;&nbsp; 92.6%</div>
-      <div class="pf-company">City Montessori School, Gomti Nagar &nbsp;&middot;&nbsp; 2009 &ndash; 2021</div>
-    `
-
-    const skills = `
-      <div class="pf-skill-group">
-        <div class="pf-skill-label">GROWTH</div>
-        <div class="pf-skill-items">
-          Performance marketing &middot; affiliate &amp; partnerships<br>
-          KOL &amp; influencer marketing &middot; lifecycle email<br>
-          User activation &middot; funnel &amp; CAC optimisation<br>
-          Cold outreach &middot; key account management<br>
-          Agency management
-        </div>
-      </div>
-      <div class="pf-skill-group">
-        <div class="pf-skill-label">CONTENT</div>
-        <div class="pf-skill-items">
-          Content strategy &middot; copywriting &middot; short-form video<br>
-          Social media (X, Instagram) &middot; community (Discord, Telegram)<br>
-          Live stream &amp; podcast production
-        </div>
-      </div>
-      <div class="pf-skill-group">
-        <div class="pf-skill-label">ANALYTICS &amp; TOOLS</div>
-        <div class="pf-skill-items">
-          GA4 &middot; GTM &middot; Microsoft Clarity &middot; UTM attribution<br>
-          SQL (PostgreSQL) &middot; Excel &middot; Python (AI-assisted)<br>
-          Prompt writing
-        </div>
-      </div>
-      <div class="pf-skill-group">
-        <div class="pf-skill-label">DOMAIN</div>
-        <div class="pf-skill-items">
-          Prediction markets &middot; Polymarket &middot; Kalshi &middot; sports trading
-        </div>
-      </div>
-      <div class="pf-skill-group">
-        <div class="pf-skill-label">EXECUTION</div>
-        <div class="pf-skill-items">I can get things done.</div>
-      </div>
-    `
-
-    const contact = `
-      <div class="pf-contact-item">
-        <div class="pf-skill-label" style="margin-bottom:6px;">LINKEDIN</div>
-        <a class="pf-link" href="https://linkedin.com/in/naman-asthana-a1874722a" target="_blank" rel="noopener">
-          linkedin.com/in/naman-asthana-a1874722a
-        </a>
-      </div>
-      <div class="pf-contact-item">
-        <div class="pf-skill-label" style="margin-bottom:6px;">EMAIL</div>
-        <a class="pf-link" href="mailto:namanasthana208@gmail.com">namanasthana208@gmail.com</a>
-      </div>
-      <div class="pf-contact-item">
-        <div class="pf-skill-label" style="margin-bottom:6px;">PHONE</div>
-        <div class="pf-text">+91 9161211377</div>
-      </div>
-    `
-
-    return `
-      ${css}
-      <div id="pf-card">
-        <button id="pf-close">&#x2715;</button>
-        <div id="pf-header">
-          <div id="pf-name">NAMAN ASTHANA</div>
-          <div id="pf-sub">Growth Associate @ DG3 &nbsp;&middot;&nbsp; Lucknow, India</div>
-        </div>
-        <div id="pf-tabs">
-          <button class="pf-tab active" data-tab="exp">EXPERIENCE</button>
-          <button class="pf-tab" data-tab="edu">EDUCATION</button>
-          <button class="pf-tab" data-tab="skills">SKILLS</button>
-          <button class="pf-tab" data-tab="contact">CONTACT</button>
-        </div>
-        <div id="pf-body">
-          <div id="pf-exp"     class="pf-content active">${exp}</div>
-          <div id="pf-edu"     class="pf-content">${edu}</div>
-          <div id="pf-skills"  class="pf-content">${skills}</div>
-          <div id="pf-contact" class="pf-content">${contact}</div>
-        </div>
-      </div>
-    `
-  }
+  if (x1 <= x0) return { x: 0, y: 0, w: img.width, h: img.height }
+  return { x: x0, y: y0, w: x1 - x0 + 2, h: y1 - y0 + 2 }
 }

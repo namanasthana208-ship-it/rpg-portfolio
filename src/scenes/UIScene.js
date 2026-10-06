@@ -1,520 +1,533 @@
-// UIScene — persistent overlay for dialogue, mobile joystick, and A/B buttons.
-// Runs on top of GameScene/InteriorScene via scene.launch().
+// UIScene — persistent overlay: dialogue box, YES/NO choice, touch controls, hints.
+// Runs above every walkable scene. Everything is laid out from the live game size.
 
-const FONT = "'Press Start 2P', monospace"
-const W = 480, H = 320
+import { FONT, isTouchDevice } from '../layout.js'
+import { TouchStick } from '../ui/TouchStick.js'
 
-const DB = {
-  x: 8, y: 208, w: 464, h: 100,
-  pad: 12,
-  textY: 228,
-  textW: 440,
-}
-
-const SLIDE = H + 10   // off-screen slide offset for dialogue open/close animation
+const TYPE_MS = 26
 
 export class UIScene extends Phaser.Scene {
-  constructor() {
-    super({ key: 'UIScene' })
-    this.dialogueOpen  = false
-    this.dlgData       = null   // { name, pages, choice }
-    this.pageIdx       = 0
-    this.charIdx       = 0
-    this.typing        = false
-    this.inChoice      = false
-    this.selectedChoice = 0
-    this.extraPage     = null   // single extra page after choice (e.g. "Your loss.")
-    this._closing      = false  // true while slide-down + delay are in progress
-  }
+  constructor() { super({ key: 'UIScene' }) }
 
   create() {
-    this.isTouch = this.sys.game.device.input.touch
-
-    // ── Keyboard ──────────────────────────────────────────────────────
-    this.keyZ     = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Z)
-    this.keyEnter = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER)
-    this.keyEsc   = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC)
-    this.keyUp    = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.UP)
-    this.keyDown  = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.DOWN)
-    this.keyW     = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W)
-    this.keyS     = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S)
-
-    // ── Dialogue box (always created, hidden until needed) ────────────
-    this._buildDialogueBox()
-
-    // ── Mobile controls ───────────────────────────────────────────────
-    if (this.isTouch) {
-      this._buildJoystick()
-      this._buildButtons()
-      this._buildMobileChoiceButtons()
-    }
-
-    // ── Interaction hint ──────────────────────────────────────────────
-    this._buildHint()
-    this.game.events.on('npc-adjacent', this._showHint, this)
-    this.game.events.on('npc-gone',     this._hideHint, this)
-
-    // ── Event listeners ───────────────────────────────────────────────
-    this.game.events.on('dialogue:open',  this._onOpen,  this)
-    this.game.events.on('dialogue:reset', this._onReset, this)
-  }
-
-  // ─── Dialogue box construction ────────────────────────────────────
-
-  _buildDialogueBox() {
-    const depth = 200
-
-    // Name tab (sits above box)
-    this.nameTabBg = this.add.graphics().setDepth(depth)
-    this.nameText  = this.add.text(20, DB.y - 14, '', {
-      fontFamily: FONT, fontSize: '8px', color: '#ffffff',
-      stroke: '#2c2137', strokeThickness: 1,
-    }).setDepth(depth + 1).setVisible(false)
-
-    // Main box
-    this.boxBg = this.add.graphics().setDepth(depth)
-
-    // Dialogue text (word-wrapped)
-    this.dlgText = this.add.text(DB.x + DB.pad, DB.textY, '', {
-      fontFamily: FONT, fontSize: '8px', color: '#2c2137',
-      stroke: '#f8f0d0', strokeThickness: 1,
-      wordWrap: { width: DB.textW },
-      lineSpacing: 0,
-    }).setDepth(depth + 1).setVisible(false)
-
-    // Page counter
-    this.pageCounter = this.add.text(DB.x + DB.w - DB.pad, DB.y + 6, '', {
-      fontFamily: FONT, fontSize: '8px', color: '#888888',
-      stroke: '#f8f0d0', strokeThickness: 1,
-    }).setOrigin(1, 0).setDepth(depth + 1).setVisible(false)
-
-    // Blinking arrow
-    this.arrow = this.add.text(DB.x + DB.w - DB.pad - 4, DB.y + DB.h - 10, '▼', {
-      fontFamily: FONT, fontSize: '9px', color: '#2c2137',
-    }).setOrigin(1, 1).setDepth(depth + 1).setVisible(false)
-
-    this._arrowOn = false
-    this.time.addEvent({
-      delay: 500, loop: true,
-      callback: () => {
-        if (!this.dialogueOpen || this.typing || this.inChoice) return
-        this._arrowOn = !this._arrowOn
-        this.arrow.setVisible(this._arrowOn)
-      },
-    })
-
-    // Choice UI (desktop)
-    this.choiceBox    = this.add.graphics().setDepth(depth + 1).setVisible(false)
-    this.choiceYesText = this.add.text(0, 0, '▶ YES', {
-      fontFamily: FONT, fontSize: '9px', color: '#2c2137',
-    }).setDepth(depth + 2).setVisible(false)
-    this.choiceNoText  = this.add.text(0, 0, '  NO', {
-      fontFamily: FONT, fontSize: '9px', color: '#2c2137',
-    }).setDepth(depth + 2).setVisible(false)
-
-    this._hideDialogue(true)
-  }
-
-  // Slide elements array (shared by show/hide)
-  get _slideEls() {
-    return [this.boxBg, this.nameTabBg, this.dlgText, this.nameText, this.pageCounter, this.arrow]
-  }
-
-  _showDialogueBox() {
-    const { x, y, w, h } = DB
-    const els = this._slideEls
-
-    // Kill any in-progress animation and reset to base positions
-    this.tweens.killTweensOf(els)
-    this.boxBg.y         = 0
-    this.nameTabBg.y     = 0
-    this.dlgText.y       = DB.textY
-    this.nameText.y      = DB.y - 14
-    this.pageCounter.y   = DB.y + 6
-    this.arrow.y         = DB.y + DB.h - 10
-
-    // Draw box
-    this.boxBg.clear()
-    this.boxBg.fillStyle(0xf8f0d0, 1)
-    this.boxBg.fillRect(x, y, w, h)
-    this.boxBg.lineStyle(3, 0x2c2137, 1)
-    this.boxBg.strokeRect(x, y, w, h)
-    this.boxBg.setVisible(true)
-
-    // Sync text positions
-    this.dlgText.setPosition(DB.x + DB.pad, DB.textY)
-    this.pageCounter.setPosition(DB.x + DB.w - DB.pad, DB.y + 6)
-    this.arrow.setPosition(DB.x + DB.w - DB.pad - 4, DB.y + DB.h - 10)
-    this.nameText.setPosition(20, DB.y - 14)
-
-    const name = this.dlgData?.name ?? ''
-    if (name) {
-      this.nameText.setText(name)
-      const tabW = name.length * 8 + 28, tabH = 22, tabY = DB.y - tabH
-      this.nameTabBg.clear()
-      this.nameTabBg.fillStyle(0x2866c8, 1)
-      this.nameTabBg.fillRect(12, tabY, tabW, tabH)
-      this.nameTabBg.lineStyle(2, 0x2c2137, 1)
-      this.nameTabBg.strokeRect(12, tabY, tabW, tabH)
-      this.nameTabBg.setVisible(true)
-      this.nameText.setVisible(true)
-    }
-    this.dlgText.setVisible(true)
-    this.pageCounter.setVisible(true)
-
-    // Slide up from below screen
-    els.forEach(e => { e.y += SLIDE })
-    this.tweens.add({
-      targets: els,
-      y: `-=${SLIDE}`,
-      duration: 150,
-      ease: 'Power2',
-    })
-  }
-
-  _hideDialogue(immediate = false) {
-    const els = this._slideEls
-    this.tweens.killTweensOf(els)
-    this._hideChoiceUI()
-
-    const resetPositions = () => {
-      this.boxBg.clear().setVisible(false)
-      this.nameTabBg.clear().setVisible(false)
-      this.nameText.setVisible(false)
-      this.dlgText.setVisible(false)
-      this.pageCounter.setVisible(false)
-      this.arrow.setVisible(false)
-      this._arrowOn = false
-      // Reset y to base so next slide-up starts from clean state
-      this.boxBg.y       = 0
-      this.nameTabBg.y   = 0
-      this.dlgText.y     = DB.textY
-      this.nameText.y    = DB.y - 14
-      this.pageCounter.y = DB.y + 6
-      this.arrow.y       = DB.y + DB.h - 10
-    }
-
-    if (immediate) {
-      resetPositions()
-      return
-    }
-
-    this.tweens.add({
-      targets: els,
-      y: `+=${SLIDE}`,
-      duration: 120,
-      ease: 'Power2',
-      onComplete: resetPositions,
-    })
-  }
-
-  // ─── Choice UI ────────────────────────────────────────────────────
-
-  _showChoiceUI() {
-    this.inChoice = true
-    this.selectedChoice = 0
-    const cx = DB.x + DB.w - 100, cy = DB.y + 12
-
-    this.choiceBox.clear()
-    this.choiceBox.fillStyle(0xf8f0d0, 1)
-    this.choiceBox.fillRect(cx - 8, cy - 6, 88, 52)
-    this.choiceBox.lineStyle(2, 0x2c2137, 1)
-    this.choiceBox.strokeRect(cx - 8, cy - 6, 88, 52)
-    this.choiceBox.setVisible(true)
-
-    this.choiceYesText.setPosition(cx, cy).setVisible(true)
-    this.choiceNoText.setPosition(cx, cy + 22).setVisible(true)
-    this._updateChoiceCursor()
-
-    if (this.isTouch) this._showMobileChoiceButtons()
-  }
-
-  _hideChoiceUI() {
+    this.isTouch = isTouchDevice()
+    this.dialogueOpen = false
     this.inChoice = false
-    this.choiceBox.setVisible(false)
-    this.choiceYesText.setVisible(false)
-    this.choiceNoText.setVisible(false)
-    if (this.isTouch) this._hideMobileChoiceButtons()
-  }
-
-  _updateChoiceCursor(playSound = false) {
-    if (playSound) window.audioMgr?.select()
-    this.choiceYesText.setText(this.selectedChoice === 0 ? '▶ YES' : '  YES')
-    this.choiceNoText.setText(this.selectedChoice === 1  ? '▶ NO'  : '  NO')
-  }
-
-  // ─── Typewriter ───────────────────────────────────────────────────
-
-  _startPage(pageText) {
-    this.fullText  = pageText
-    this.charIdx   = 0
-    this.typing    = true
-    this._arrowOn  = false
-    this.arrow.setVisible(false)
-    this.dlgText.setText('')
-
-    if (this._typeTimer) this._typeTimer.remove()
-    this._typeTimer = this.time.addEvent({
-      delay: 35, loop: true,
-      callback: () => {
-        if (!this.typing) return
-        this.charIdx++
-        this.dlgText.setText(this.fullText.slice(0, this.charIdx))
-        window.audioMgr?.blip()
-        if (this.charIdx >= this.fullText.length) {
-          this.typing = false
-          this._typeTimer.remove()
-          this._typeTimer = null
-          this._onPageComplete()
-        }
-      },
-    })
-  }
-
-  _skipToEnd() {
-    if (!this.typing) return
     this.typing = false
-    if (this._typeTimer) { this._typeTimer.remove(); this._typeTimer = null }
-    this.charIdx = this.fullText.length
-    this.dlgText.setText(this.fullText)
-    this._onPageComplete()
+    this._closing = false
+    this.dlgData = null
+    this.extraPage = null
+    this.selectedChoice = 0
+    this._coached = false
+
+    const K = Phaser.Input.Keyboard.KeyCodes
+    const kb = this.input.keyboard
+    this.keysAction = [K.Z, K.ENTER, K.SPACE].map(k => kb.addKey(k))
+    this.keysCancel = [K.X, K.ESC, K.BACKSPACE].map(k => kb.addKey(k))
+    this.keysUp = [K.UP, K.W].map(k => kb.addKey(k, false))
+    this.keysDown = [K.DOWN, K.S].map(k => kb.addKey(k, false))
+    this.keysRun = [K.SHIFT, K.X].map(k => kb.addKey(k, false))
+
+    this.m = this._metrics()
+    this._buildDialogue()
+    this._buildChoice()
+    if (this.isTouch) {
+      this._buildTouchControls()
+      // Controls stay hidden on the title screen until a walkable scene starts
+      this.stick.setEnabled(false)
+      this.btnA.c.setAlpha(0)
+      this.btnB.c.setAlpha(0)
+    }
+
+    // Tap anywhere to advance text
+    this.input.on('pointerdown', () => {
+      if (this.dialogueOpen && !this.inChoice && !this._closing) this._advance()
+    })
+
+    const ev = this.game.events
+    ev.on('dialogue:open', this._onOpen, this)
+    ev.on('dialogue:reset', this._onReset, this)
+    ev.on('npc-adjacent', () => this._setTalkCue(true))
+    ev.on('npc-gone', () => this._setTalkCue(false))
+    ev.on('world:enter', this._onWorldEnter, this)
+
+    this.events.on('pause', () => this._releaseStick())
+    this.events.on('sleep', () => this._releaseStick())
+    this.scale.on('resize', this._layout, this)
+    this._layout()
   }
 
-  _onPageComplete() {
-    if (!this.dlgData) return
-    const { pages, choice } = this.dlgData
-    const isLastPage = this.pageIdx >= pages.length - 1
-    const hasChoice  = isLastPage && choice && !this.extraPage
+  // ─── Layout ───────────────────────────────────────────────────────
 
-    if (hasChoice) {
-      this._showChoiceUI()
-    } else {
-      this._arrowOn = true
-      this.arrow.setVisible(true)
+  _metrics() {
+    const W = this.scale.width, H = this.scale.height
+    const phone = H < 300
+    const bh = phone ? 72 : 90
+    return {
+      W, H, phone,
+      box: { x: 5, y: H - bh - 5, w: W - 10, h: bh },
+      line: phone ? 9 : 11,
     }
   }
 
-  // ─── Dialogue state machine ───────────────────────────────────────
+  _layout() {
+    this.m = this._metrics()
+    this._drawDialogueBox()
+    this._layoutChoice()
+    if (this.isTouch) this._layoutTouch()
+  }
+
+  // ─── Dialogue box ─────────────────────────────────────────────────
+
+  _buildDialogue() {
+    this.dlg = this.add.container(0, 0).setDepth(200).setVisible(false)
+    this.tabBg = this.add.graphics()
+    this.boxBg = this.add.graphics()
+    this.nameText = this.add.text(0, 0, '', {
+      fontFamily: FONT, fontSize: '8px', color: '#ffffff',
+    }).setShadow(1, 1, '#1a2448', 0, false, true)
+    this.dlgText = this.add.text(0, 0, '', {
+      fontFamily: FONT, fontSize: '10px', color: '#383848',
+    }).setShadow(1, 1, '#d4d4cc', 0, false, true)
+    this.pageText = this.add.text(0, 0, '', {
+      fontFamily: FONT, fontSize: '6px', color: '#a0a0b0',
+    }).setOrigin(1, 0)
+    this.arrow = this.add.graphics()
+    this.arrow.fillStyle(0x283048, 1).fillTriangle(-6, -3, 6, -3, 0, 5)
+    this.arrow.fillStyle(0xe04848, 1).fillTriangle(-4, -2, 4, -2, 0, 3)
+    this.arrow.setVisible(false)
+    this.dlg.add([this.tabBg, this.boxBg, this.nameText, this.dlgText, this.pageText, this.arrow])
+  }
+
+  _drawDialogueBox() {
+    const { box, line } = this.m
+    const g = this.boxBg
+    g.clear()
+    g.fillStyle(0x283048, 1).fillRoundedRect(box.x, box.y, box.w, box.h, 7)
+    g.fillStyle(0xfafaf6, 1).fillRoundedRect(box.x + 3, box.y + 3, box.w - 6, box.h - 6, 5)
+    g.lineStyle(2, 0x8ca4cc, 1).strokeRoundedRect(box.x + 6, box.y + 6, box.w - 12, box.h - 12, 4)
+
+    this.dlgText.setPosition(box.x + 16, box.y + 16)
+    this.dlgText.setWordWrapWidth(box.w - 48)
+    this.dlgText.setLineSpacing(line)
+    this.pageText.setPosition(box.x + box.w - 12, box.y + 10)
+    this._arrowY = box.y + box.h - 15
+    this.tweens.killTweensOf(this.arrow)
+    this.arrow.setPosition(box.x + box.w - 22, this._arrowY)
+    this.tweens.add({ targets: this.arrow, y: this._arrowY + 3, duration: 280, yoyo: true, repeat: -1, ease: 'Sine.InOut' })
+    this._drawNameTab()
+  }
+
+  _drawNameTab() {
+    const { box } = this.m
+    const name = this.dlgData?.name ?? ''
+    this.tabBg.clear()
+    this.nameText.setText(name).setVisible(!!name)
+    if (!name) return
+    const tw = this.nameText.width + 22, th = 22, tx = box.x + 10, ty = box.y - 16
+    this.tabBg.fillStyle(0x283048, 1).fillRoundedRect(tx, ty, tw, th, 6)
+    this.tabBg.fillStyle(0x3a6cd0, 1).fillRoundedRect(tx + 2, ty + 2, tw - 4, th - 4, 4)
+    this.nameText.setPosition(tx + 11, ty + 5)
+  }
+
+  _showBox() {
+    const off = this.m.box.h + 30
+    this.tweens.killTweensOf(this.dlg)
+    this.dlg.setVisible(true).setY(off)
+    this.tweens.add({ targets: this.dlg, y: 0, duration: 170, ease: 'Cubic.Out' })
+  }
+
+  _hideBox(immediate, onDone) {
+    this.tweens.killTweensOf(this.dlg)
+    if (immediate) { this.dlg.setVisible(false); onDone?.(); return }
+    this.tweens.add({
+      targets: this.dlg, y: this.m.box.h + 30, duration: 130, ease: 'Cubic.In',
+      onComplete: () => { this.dlg.setVisible(false); onDone?.() },
+    })
+  }
+
+  // ─── Dialogue flow ────────────────────────────────────────────────
 
   _onReset() {
-    if (this._typeTimer) { this._typeTimer.remove(); this._typeTimer = null }
-    this._hideDialogue(true)   // always immediate on scene transitions
-    this.dialogueOpen  = false
-    this.typing        = false
-    this.inChoice      = false
-    this._closing      = false
-    this.dlgData       = null
-    this.extraPage     = null
+    this._typeTimer?.remove()
+    this._hideChoice(true)
+    this._hideBox(true)
+    this.dialogueOpen = false
+    this.typing = false
+    this._closing = false
+    this.dlgData = null
+    this.extraPage = null
     this.game.registry.set('inputLock', false)
+    this._setControlsVisible(true)
   }
 
-  _onOpen(npcData) {
-    this._hideHint()
-    this.dlgData      = npcData
-    this.pageIdx      = 0
-    this.extraPage    = null
+  _onOpen(data) {
+    this.dlgData = data
+    this.pageIdx = 0
+    this.extraPage = null
     this.dialogueOpen = true
-    this._closing     = false
+    this._closing = false
     this.game.registry.set('inputLock', true)
-    this._showDialogueBox()
-    this._updatePageCounter()
-    this._startPage(npcData.pages[0])
+    this._releaseStick()
+    this._setControlsVisible(false)
+    this._dismissCoach()
+    this._drawNameTab()
+    this.dlgText.setText('')
+    this._updatePageText()
+    this._showBox()
+    this.time.delayedCall(90, () => this._startPage(data.pages[0]))
+  }
+
+  _startPage(text, speed = TYPE_MS) {
+    this.fullText = text
+    this.charIdx = 0
+    this.typing = true
+    this.arrow.setVisible(false)
+    this.dlgText.setText('')
+    this._typeTimer?.remove()
+    this._typeTimer = this.time.addEvent({
+      delay: speed, loop: true,
+      callback: () => {
+        this.charIdx++
+        this.dlgText.setText(this.fullText.slice(0, this.charIdx))
+        if (this.charIdx % 2 === 1 && this.fullText[this.charIdx - 1] !== ' ') window.audioMgr?.blip()
+        if (this.charIdx >= this.fullText.length) this._finishPage()
+      },
+    })
+  }
+
+  _finishPage() {
+    this._typeTimer?.remove()
+    this._typeTimer = null
+    this.typing = false
+    this.dlgText.setText(this.fullText)
+    const { pages, choice } = this.dlgData
+    const last = this.pageIdx >= pages.length - 1
+    if (last && choice && !this.extraPage) this._showChoice()
+    else this.arrow.setVisible(true)
   }
 
   _advance() {
-    if (!this.dialogueOpen || this._closing) return
-
-    if (this.typing) { this._skipToEnd(); return }
-    if (this.inChoice) return
-
-    const { pages } = this.dlgData
-    if (this.extraPage) {
-      this._close()
-      return
-    }
-
-    const nextPage = this.pageIdx + 1
-    if (nextPage < pages.length) {
-      this.pageIdx = nextPage
-      this._updatePageCounter()
-      this._startPage(pages[this.pageIdx])
+    if (!this.dialogueOpen || this._closing || this.inChoice) return
+    if (this.typing) { this._finishPage(); return }
+    if (this.extraPage) { this._close(); return }
+    if (this.pageIdx + 1 < this.dlgData.pages.length) {
+      this.pageIdx++
+      this._updatePageText()
+      window.audioMgr?.cursor()
+      this._startPage(this.dlgData.pages[this.pageIdx])
     } else {
       this._close()
-    }
-  }
-
-  _confirmChoice() {
-    if (!this.inChoice) return
-    window.audioMgr?.select()
-    const choice = this.dlgData.choice
-    this._hideChoiceUI()
-    this.arrow.setVisible(false)
-
-    if (this.selectedChoice === 0) {
-      if (choice.yes?.url) window.open(choice.yes.url, '_blank')
-      this._close()
-    } else {
-      if (choice.no?.text) {
-        this.extraPage = choice.no.text
-        this.dlgText.setText('')
-        this._startPage(choice.no.text)
-      } else {
-        this._close()
-      }
     }
   }
 
   _close() {
     if (this._closing) return
     this._closing = true
-    this._hideChoiceUI()
-    this._hideDialogue()   // slide-down animation (120ms)
-    // Delay state/lock release until animation finishes
-    this.time.delayedCall(130, () => {
+    this.arrow.setVisible(false)
+    this._hideChoice()
+    this._hideBox(false, () => {
       this.dialogueOpen = false
-      this._closing     = false
-      this.dlgData      = null
-      this.extraPage    = null
+      this._closing = false
+      this.dlgData = null
+      this.extraPage = null
       this.game.registry.set('inputLock', false)
+      this._setControlsVisible(true)
       this.game.events.emit('dialogue:closed')
     })
   }
 
-  _updatePageCounter() {
-    if (!this.dlgData) return
-    const total = this.dlgData.pages.length
-    this.pageCounter.setText(`${this.pageIdx + 1}/${total}`)
+  _updatePageText() {
+    const n = this.dlgData?.pages.length ?? 0
+    this.pageText.setText(n > 1 ? `${this.pageIdx + 1}/${n}` : '')
   }
 
-  // ─── Mobile joystick ──────────────────────────────────────────────
+  // ─── YES / NO ─────────────────────────────────────────────────────
 
-  _buildJoystick() {
-    const JX = 80, JY = H - 70, R = 50, TR = 26
-    this.joyBase  = this.add.circle(JX, JY, R, 0x888888, 0.45).setDepth(150)
-    this.joyThumb = this.add.circle(JX, JY, TR, 0xdddddd, 0.7).setDepth(151)
+  _buildChoice() {
+    this.choice = this.add.container(0, 0).setDepth(210).setVisible(false)
+    this.choiceBg = this.add.graphics()
+    this.choiceHi = this.add.graphics()
+    this.choiceCursor = this.add.text(0, 0, '▶', { fontFamily: FONT, fontSize: '9px', color: '#e04848' }).setOrigin(0, 0.5)
+    this.choiceLabels = ['YES', 'NO'].map(t =>
+      this.add.text(0, 0, t, { fontFamily: FONT, fontSize: '10px', color: '#383848' })
+        .setOrigin(0, 0.5).setShadow(1, 1, '#d4d4cc', 0, false, true))
+    this.choiceZones = [0, 1].map(i => {
+      const z = this.add.rectangle(0, 0, 10, 10, 0xffffff, 0.001).setInteractive({ useHandCursor: true })
+      z.on('pointerdown', (p, lx, ly, e) => {
+        if (!this.inChoice) return
+        e?.stopPropagation()
+        this._pressedChoice = i
+        this._setChoice(i)
+      })
+      // Confirm on release: opening a link must happen inside a real tap gesture
+      z.on('pointerup', () => {
+        if (this.inChoice && this._pressedChoice === i) this._confirmChoice(i)
+      })
+      z.on('pointerover', () => { if (this.inChoice && !this.isTouch) this._setChoice(i) })
+      return z
+    })
+    this.choice.add([this.choiceBg, this.choiceHi, ...this.choiceZones, this.choiceCursor, ...this.choiceLabels])
+  }
 
-    const rexJoy = this.plugins.get('rexVirtualJoystick')
-    if (!rexJoy) { this.joyStick = null; return }
-    this.joyStick = rexJoy.add(this, {
-      x: JX, y: JY,
-      radius: R,
-      base: this.joyBase,
-      thumb: this.joyThumb,
-      dir: '4dir',
-      forceMin: 14,
+  _layoutChoice() {
+    const { box, phone } = this.m
+    const w = phone ? 124 : 92, row = phone ? 34 : 22, pad = 6
+    const h = row * 2 + pad * 2
+    const x = box.x + box.w - w, y = box.y - h - 6
+    this._choiceRect = { x, y, w, h, row, pad }
+    const g = this.choiceBg
+    g.clear()
+    g.fillStyle(0x283048, 1).fillRoundedRect(x, y, w, h, 7)
+    g.fillStyle(0xfafaf6, 1).fillRoundedRect(x + 3, y + 3, w - 6, h - 6, 5)
+    g.lineStyle(2, 0x8ca4cc, 1).strokeRoundedRect(x + 6, y + 6, w - 12, h - 12, 4)
+    for (let i = 0; i < 2; i++) {
+      const cy = y + pad + row * i + row / 2
+      this.choiceZones[i].setPosition(x + w / 2, cy).setSize(w - 6, row)
+      this.choiceZones[i].input?.hitArea.setSize(w - 6, row)
+      this.choiceLabels[i].setPosition(x + 30, cy)
+    }
+    this._setChoice(this.selectedChoice, true)
+  }
+
+  _setChoice(i, silent = false) {
+    if (!silent && i !== this.selectedChoice) window.audioMgr?.cursor()
+    this.selectedChoice = i
+    const { x, y, w, row, pad } = this._choiceRect
+    const cy = y + pad + row * i + row / 2
+    this.choiceCursor.setPosition(x + 14, cy)
+    this.choiceHi.clear()
+    this.choiceHi.fillStyle(0xffe9a8, 1).fillRoundedRect(x + 8, cy - row / 2 + 2, w - 16, row - 4, 4)
+  }
+
+  _showChoice() {
+    this.inChoice = true
+    this._pressedChoice = null
+    this._setChoice(0, true)
+    this.choice.setVisible(true).setAlpha(0)
+    this.choice.setPosition(0, 6)
+    this.tweens.add({ targets: this.choice, alpha: 1, y: 0, duration: 140, ease: 'Back.Out' })
+  }
+
+  _hideChoice(immediate) {
+    this.inChoice = false
+    this.tweens.killTweensOf(this.choice)
+    if (immediate || !this.choice.visible) { this.choice.setVisible(false); return }
+    this.tweens.add({ targets: this.choice, alpha: 0, duration: 90, onComplete: () => this.choice.setVisible(false) })
+  }
+
+  _confirmChoice(i) {
+    if (!this.inChoice) return
+    const choice = this.dlgData.choice
+    this._hideChoice()
+    if (i === 0) {
+      window.audioMgr?.confirm()
+      if (choice.yes?.url) window.open(choice.yes.url, '_blank', 'noopener')
+      this._close()
+      return
+    }
+    // NO — let the silence land before the NPC reacts
+    window.audioMgr?.cursor()
+    this.extraPage = choice.no?.text
+    if (!this.extraPage) { this._close(); return }
+    this.dlgText.setText('')
+    this.arrow.setVisible(false)
+    this.pageText.setText('')
+    this.time.delayedCall(700, () => {
+      if (!this.dialogueOpen) return
+      this.game.events.emit('npc:sad')
+      window.audioMgr?.sad()
+      this.time.delayedCall(350, () => this._startPage(this.extraPage, 55))
     })
   }
 
-  _buildButtons() {
-    const depth = 150
-    const AX = W - 56, AY = H - 60
-    const BX = W - 116, BY = H - 60
+  // ─── Touch controls ───────────────────────────────────────────────
 
-    this.btnA = this.add.circle(AX, AY, 28, 0xdd4444, 0.8).setDepth(depth).setInteractive()
-    this.add.text(AX, AY, 'A', { fontFamily: FONT, fontSize: '12px', color: '#fff' })
-      .setOrigin(0.5).setDepth(depth + 1)
-    this.btnA.on('pointerdown', () => this._onActionPress())
+  _buildTouchControls() {
+    this.stick = new TouchStick(this, {
+      zone: p => p.x < this.scale.width * 0.5 && !this.dialogueOpen,
+      home: () => ({ x: this.m.phone ? 58 : 66, y: this.scale.height - (this.m.phone ? 58 : 66) }),
+      radius: 34,
+      onChange: dir => {
+        this.game.registry.set('joyDir', dir)
+        if (dir && this._coach) this.time.delayedCall(500, () => this._dismissCoach())
+      },
+    })
 
-    this.btnB = this.add.circle(BX, BY, 22, 0x5555dd, 0.8).setDepth(depth).setInteractive()
-    this.add.text(BX, BY, 'B', { fontFamily: FONT, fontSize: '10px', color: '#fff' })
-      .setOrigin(0.5).setDepth(depth + 1)
-    this.btnB.on('pointerdown', () => this._onCancelPress())
-  }
+    this.btnA = this._makeButton('A', 0xd84848, 0xff7a6a, () => this._onAction())
+    this.btnB = this._makeButton('B', 0x4a5cc8, 0x7d8cf0, () => this._onCancel(), held => { this._bHeld = held })
 
-  _buildMobileChoiceButtons() {
-    const depth = 210
-    const bw = W - 32, bh = 36
-    const bx = 16, byY = H - 78, byN = H - 36
-
-    this.mChoiceYes = this.add.rectangle(bx + bw / 2, byY, bw, bh, 0x44aa44, 0.95)
-      .setDepth(depth).setInteractive().setVisible(false)
-    this.add.text(bx + bw / 2, byY, '▶ YES', { fontFamily: FONT, fontSize: '10px', color: '#fff' })
-      .setOrigin(0.5).setDepth(depth + 1).setVisible(false)
-    this.mChoiceNo = this.add.rectangle(bx + bw / 2, byN, bw, bh, 0xaa4444, 0.95)
-      .setDepth(depth).setInteractive().setVisible(false)
-    this.add.text(bx + bw / 2, byN, '✕ NO', { fontFamily: FONT, fontSize: '10px', color: '#fff' })
-      .setOrigin(0.5).setDepth(depth + 1).setVisible(false)
-
-    this._mChoiceChildren = this.children.list.slice(-4)
-
-    this.mChoiceYes.on('pointerdown', () => { this.selectedChoice = 0; this._confirmChoice() })
-    this.mChoiceNo.on('pointerdown',  () => { this.selectedChoice = 1; this._confirmChoice() })
-  }
-
-  _showMobileChoiceButtons() {
-    this._mChoiceChildren?.forEach(o => o.setVisible(true))
-  }
-
-  _hideMobileChoiceButtons() {
-    this._mChoiceChildren?.forEach(o => o.setVisible(false))
-  }
-
-  // ─── Interaction hint ─────────────────────────────────────────────
-
-  _buildHint() {
-    const label = this.isTouch ? 'A: TALK' : 'Z: TALK'
-    this.hintBg   = this.add.graphics().setDepth(190)
-    this.hintText = this.add.text(0, 0, label, {
+    this.talkCue = this.add.text(0, 0, 'TALK', {
       fontFamily: FONT, fontSize: '7px', color: '#ffffff',
-    }).setOrigin(0.5, 1).setDepth(191).setVisible(false)
+    }).setOrigin(0.5).setDepth(161).setShadow(1, 1, '#000000', 0, false, true).setAlpha(0)
   }
 
-  _showHint({ x, y }) {
-    if (this.dialogueOpen) return
-    const pad = 6, th = 16
-    const tw = this.hintText.width + pad * 2
-    this.hintBg.clear()
-    this.hintBg.fillStyle(0x2c2137, 0.9)
-    this.hintBg.fillRect(x - tw / 2, y - 52 - th, tw, th)
-    this.hintBg.setVisible(true)
-    this.hintText.setPosition(x, y - 52).setVisible(true)
+  _makeButton(label, color, light, onPress, onHold) {
+    const c = this.add.container(0, 0).setDepth(160)
+    const ring = this.add.circle(0, 0, 10, 0xffffff, 0).setStrokeStyle(2, 0xffffff, 0.9)
+    const g = this.add.graphics()
+    const t = this.add.text(0, 1, label, { fontFamily: FONT, fontSize: '11px', color: '#ffffff' })
+      .setOrigin(0.5).setShadow(1, 1, '#00000088', 0, false, true)
+    c.add([ring, g, t])
+    const btn = { c, g, ring, t, color, light, r: 20, down: false }
+    const draw = pressed => {
+      g.clear()
+      g.fillStyle(0x000000, 0.25).fillCircle(0, 3, btn.r)
+      g.fillStyle(pressed ? light : color, pressed ? 1 : 0.88).fillCircle(0, pressed ? 2 : 0, btn.r)
+      g.lineStyle(2, 0xffffff, pressed ? 0.95 : 0.55).strokeCircle(0, pressed ? 2 : 0, btn.r)
+      g.fillStyle(0xffffff, pressed ? 0.12 : 0.22).fillEllipse(0, -btn.r * 0.45, btn.r * 1.2, btn.r * 0.6)
+      t.setY(pressed ? 3 : 1)
+    }
+    btn.draw = draw
+    c.setInteractive(new Phaser.Geom.Circle(0, 0, 30), Phaser.Geom.Circle.Contains)
+    c.on('pointerdown', (p, lx, ly, e) => {
+      if (c.alpha < 0.3) return
+      e?.stopPropagation()
+      btn.down = true
+      draw(true)
+      this.tweens.killTweensOf(c)
+      c.setScale(0.9)
+      ring.setRadius(btn.r).setAlpha(0.9)
+      this.tweens.add({ targets: ring, radius: btn.r + 12, alpha: 0, duration: 260, ease: 'Cubic.Out' })
+      navigator.vibrate?.(8)
+      onHold?.(true)
+      onPress()
+    })
+    const up = () => {
+      if (!btn.down) return
+      btn.down = false
+      onHold?.(false)
+      draw(false)
+      this.tweens.add({ targets: c, scale: 1, duration: 140, ease: 'Back.Out' })
+    }
+    c.on('pointerup', up)
+    c.on('pointerout', up)
+    draw(false)
+    return btn
   }
 
-  _hideHint() {
-    this.hintBg.clear().setVisible(false)
-    this.hintText.setVisible(false)
+  _layoutTouch() {
+    const { W, H, phone } = this.m
+    const rA = phone ? 25 : 28, rB = phone ? 19 : 22
+    const ax = W - (phone ? 48 : 56), ay = H - (phone ? 66 : 76)
+    const bx = ax - (phone ? 58 : 66), by = ay + (phone ? 26 : 30)
+    this._placeButton(this.btnA, ax, ay, rA)
+    this._placeButton(this.btnB, bx, by, rB)
+    this.talkCue.setPosition(ax, ay - rA - 9)
+    this.stick.radius = phone ? 34 : 38
+    this.stick._drawBase()
+    this.stick._drawThumb(false)
+    this.stick.relayout()
   }
 
-  // ─── Input handlers ───────────────────────────────────────────────
+  _placeButton(btn, x, y, r) {
+    btn.r = r
+    btn.c.setPosition(x, y)
+    btn.c.input.hitArea.setTo(0, 0, r + 12)
+    btn.draw(false)
+  }
 
-  _onActionPress() {
+  _setControlsVisible(on) {
+    if (!this.isTouch) return
+    this.stick.setEnabled(on)
+    const targets = [this.btnA.c, this.btnB.c]
+    this.tweens.killTweensOf(targets)
+    this.tweens.add({ targets, alpha: on ? 1 : 0, duration: 150 })
+    if (!on) this._setTalkCue(false)
+  }
+
+  _setTalkCue(on) {
+    if (!this.isTouch) return
+    this._pulse?.stop()
+    this._pulse = null
+    this.btnA.g.setScale(1)
+    this.tweens.killTweensOf(this.talkCue)
+    if (on && !this.dialogueOpen) {
+      this.tweens.add({ targets: this.talkCue, alpha: 1, duration: 150 })
+      this._pulse = this.tweens.add({ targets: this.btnA.g, scale: 1.08, duration: 420, yoyo: true, repeat: -1, ease: 'Sine.InOut' })
+    } else {
+      this.tweens.add({ targets: this.talkCue, alpha: 0, duration: 120 })
+    }
+  }
+
+  _releaseStick() {
+    this.stick?._release()
+    this._bHeld = false
+    this.game.registry.set('joyDir', null)
+  }
+
+  // ─── First-time control hints ─────────────────────────────────────
+
+  _onWorldEnter(key) {
+    if (!this.dialogueOpen) this._setControlsVisible(true)
+    if (this._coached || key !== 'GameScene') return
+    this._coached = true
+    this.time.delayedCall(700, () => this._showCoach())
+  }
+
+  _showCoach() {
+    const { W, H, phone } = this.m
+    const items = []
+    const pill = (x, y, text, origin = 0.5) => {
+      const t = this.add.text(0, 0, text, { fontFamily: FONT, fontSize: '7px', color: '#ffffff', align: 'center', lineSpacing: 5 })
+        .setOrigin(0.5).setShadow(1, 1, '#000000', 0, false, true)
+      const bw = t.width + 16, bh = t.height + 12
+      const g = this.add.graphics()
+      g.fillStyle(0x10142a, 0.82).fillRoundedRect(-bw / 2, -bh / 2, bw, bh, 6)
+      g.lineStyle(1, 0xffd34a, 0.7).strokeRoundedRect(-bw / 2, -bh / 2, bw, bh, 6)
+      const c = this.add.container(x + (origin === 0 ? bw / 2 : origin === 1 ? -bw / 2 : 0), y, [g, t]).setDepth(190).setAlpha(0)
+      items.push(c)
+    }
+    if (this.isTouch) {
+      pill(10, H - (phone ? 118 : 130), 'DRAG HERE\nTO WALK', 0)
+      pill(W - 10, H - (phone ? 128 : 144), 'A  TALK\nHOLD B  RUN', 1)
+    } else {
+      pill(W / 2, 22, 'ARROWS  WALK    Z  TALK    SHIFT  RUN')
+    }
+    this._coach = items
+    this.tweens.add({ targets: items, alpha: 1, duration: 300 })
+    this.time.delayedCall(5500, () => this._dismissCoach())
+  }
+
+  _dismissCoach() {
+    const items = this._coach
+    if (!items) return
+    this._coach = null
+    this.tweens.add({ targets: items, alpha: 0, duration: 300, onComplete: () => items.forEach(i => i.destroy()) })
+  }
+
+  // ─── Input ────────────────────────────────────────────────────────
+
+  _onAction() {
     if (this.dialogueOpen) {
-      if (this.inChoice)   this._confirmChoice()
-      else                 this._advance()
+      if (this.inChoice) this._confirmChoice(this.selectedChoice)
+      else this._advance()
     } else {
       this.game.events.emit('interact')
     }
   }
 
-  _onCancelPress() {
-    if (this.dialogueOpen) this._close()
-    else                   this.game.events.emit('cancel')
+  _onCancel() {
+    if (this.dialogueOpen) {
+      if (this.inChoice) this._confirmChoice(1)
+      else this._advance()
+    } else {
+      this.game.events.emit('cancel')
+    }
   }
 
-  // ─── Update ───────────────────────────────────────────────────────
-
   update() {
-    if (this.joyStick) {
-      const force = this.joyStick.force
-      const jx = force > 0 ? this.joyStick.forceX / (this.joyStick.radius || 50) : 0
-      const jy = force > 0 ? this.joyStick.forceY / (this.joyStick.radius || 50) : 0
-      this.game.registry.set('joystickDir', { x: jx, y: jy })
+    const running = !this.dialogueOpen && (this._bHeld || this.keysRun.some(k => k.isDown))
+    if (running !== this._running) {
+      this._running = running
+      this.game.registry.set('running', running)
     }
-
-    const actionJD = Phaser.Input.Keyboard.JustDown(this.keyZ) ||
-                     Phaser.Input.Keyboard.JustDown(this.keyEnter)
-    const cancelJD = Phaser.Input.Keyboard.JustDown(this.keyEsc)
-
-    if (actionJD) this._onActionPress()
-    if (cancelJD) this._onCancelPress()
-
+    const JD = Phaser.Input.Keyboard.JustDown
+    if (this.keysAction.some(k => JD(k))) this._onAction()
+    if (this.keysCancel.some(k => JD(k))) this._onCancel()
     if (this.inChoice) {
-      const upJD   = Phaser.Input.Keyboard.JustDown(this.keyUp)   ||
-                     Phaser.Input.Keyboard.JustDown(this.keyW)
-      const downJD = Phaser.Input.Keyboard.JustDown(this.keyDown) ||
-                     Phaser.Input.Keyboard.JustDown(this.keyS)
-      if (upJD   && this.selectedChoice !== 0) { this.selectedChoice = 0; this._updateChoiceCursor(true) }
-      if (downJD && this.selectedChoice !== 1) { this.selectedChoice = 1; this._updateChoiceCursor(true) }
+      if (this.keysUp.some(k => JD(k))) this._setChoice(0)
+      if (this.keysDown.some(k => JD(k))) this._setChoice(1)
     }
   }
 }

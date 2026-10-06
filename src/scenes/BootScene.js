@@ -1,47 +1,20 @@
 import { NPC_PALETTES } from '../data/npcs.js'
+import { FONT } from '../layout.js'
 
 export class BootScene extends Phaser.Scene {
   constructor() { super('BootScene') }
 
   preload() {
-    // Loading screen
-    const W = 480, H = 320, FONT = "'Press Start 2P', monospace"
-    this.add.rectangle(W / 2, H / 2, W, H, 0x080818, 1)
-    this.add.text(W / 2, H / 2 - 24, 'NAMAN ASTHANA', {
-      fontFamily: FONT, fontSize: '9px', color: '#FFD700',
+    const W = this.scale.width, H = this.scale.height
+    this.add.rectangle(0, 0, W, H, 0x080818).setOrigin(0)
+    this.add.text(W / 2, H / 2 - 22, 'NAMAN ASTHANA', {
+      fontFamily: FONT, fontSize: '10px', color: '#FFD700',
     }).setOrigin(0.5)
-    const loadText = this.add.text(W / 2, H / 2 + 10, 'Loading...', {
-      fontFamily: FONT, fontSize: '7px', color: '#888899',
-    }).setOrigin(0.5)
-    let dots = 0
-    this.time.addEvent({
-      delay: 380, loop: true,
-      callback: () => { dots = (dots + 1) % 4; loadText.setText('Loading' + '.'.repeat(dots || 1)) },
-    })
-
-    // --- debug overlay (visible even if Phaser renderer freezes) ---
-    const dbg = document.createElement('div')
-    dbg.id = 'boot-dbg'
-    dbg.style.cssText = 'position:fixed;bottom:4px;left:4px;right:4px;color:#0f0;font:9px monospace;z-index:9999;white-space:pre-wrap;pointer-events:none;line-height:1.4'
-    document.body.appendChild(dbg)
-    const _log = msg => { dbg.textContent = msg; console.log('[boot]', msg) }
-    _log('preload start')
-
-    this.load.on('progress', v => {
-      const pct = Math.round(v * 100)
-      _log(`loading: ${pct}%`)
-      loadText.setText('Loading ' + pct + '%')
-    })
-    this.load.on('loaderror', file => {
-      _log(`WARN: failed ${file.key} (${file.src || file.url})`)
-    })
-    this.load.on('complete', () => {
-      _log('assets done → create()')
-    })
-
-    window.onerror = (msg, src, line) => {
-      _log(`JS ERROR: ${msg} (${src}:${line})`)
-    }
+    const barW = Math.min(180, W * 0.5)
+    this.add.rectangle(W / 2, H / 2 + 6, barW + 4, 8, 0x283048).setOrigin(0.5)
+    const bar = this.add.rectangle(W / 2 - barW / 2, H / 2 + 6, 1, 4, 0xffd700).setOrigin(0, 0.5)
+    this.load.on('progress', v => bar.setSize(Math.max(1, barW * v), 4))
+    this.load.on('loaderror', file => console.warn('[boot] failed to load', file.key))
 
     const PCT = 'assets/pocket_creature_tamer/Pocket Creature Tamer DEMO/'
     const GBS = 'assets/gb_studio_tileset/Free/'
@@ -52,7 +25,6 @@ export class BootScene extends Phaser.Scene {
 
     // Terrain tiles — Pocket Creature Tamer
     this.load.image('src_path',         PCT + 'Tilesets/path_05alt.png')   // brown earth path
-    this.load.image('src_path_stone',   PCT + 'Tilesets/path_02.png')      // stone path (unused but loaded)
     this.load.image('src_plaza',        PCT + 'Tilesets/path_01alt.png')   // cream stone plaza
     this.load.image('src_flower_grass', PCT + 'Tilesets/path_04.png')
     this.load.image('src_flowers',      PCT + 'Enviroment/Vegetation/Flowers/flowers.png')
@@ -69,37 +41,20 @@ export class BootScene extends Phaser.Scene {
       frameHeight: 32,
     })
 
-    // Naman's overworld (non-battle) sprite
-    this.load.image('naman_ow_raw', 'assets/naman_overworld.png')
-
     // Naman battle portrait
     this.load.image('naman_battle_raw', 'assets/naman_battle.png')
   }
 
   create() {
-    const dbg = document.getElementById('boot-dbg')
-    const _log = msg => { if (dbg) dbg.textContent = msg; console.log('[boot]', msg) }
     try {
-      _log('create: tileset')
       this.buildTileset()
-      _log('create: building frames')
       this.registerBuildingFrames()
-      _log('create: player frames')
       this.registerPlayerFrames()
-      _log('create: NPC textures (13)')
       this.createNPCTextures()
-      _log('create: battle texture')
       this.createNamanBattleTexture()
-      _log('create: done')
     } catch (e) {
-      if (dbg) dbg.textContent = 'ERROR: ' + e.message
       console.error('BootScene create error:', e)
     }
-    // Hide debug overlay a moment after transition (keep visible long enough to screenshot)
-    setTimeout(() => {
-      const el = document.getElementById('boot-dbg')
-      if (el) el.remove()
-    }, 4000)
     this.scene.launch('UIScene')
     this.scene.start('TitleScene')
   }
@@ -109,7 +64,7 @@ export class BootScene extends Phaser.Scene {
     if (!raw) return
     const c = document.createElement('canvas')
     c.width = raw.width; c.height = raw.height
-    const ctx = c.getContext('2d')
+    const ctx = c.getContext('2d', { willReadFrequently: true })
     ctx.drawImage(raw, 0, 0)
     const d = ctx.getImageData(0, 0, c.width, c.height)
     const w = c.width, h = c.height
@@ -195,7 +150,7 @@ export class BootScene extends Phaser.Scene {
     const src = this.textures.get('player_npc_src').getSourceImage()
     const srcC = document.createElement('canvas')
     srcC.width = src.width; srcC.height = src.height
-    const sCtx = srcC.getContext('2d')
+    const sCtx = srcC.getContext('2d', { willReadFrequently: true })
     sCtx.drawImage(src, 0, 0)
     const srcData = sCtx.getImageData(0, 0, srcC.width, srcC.height)
 
