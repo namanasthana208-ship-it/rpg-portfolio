@@ -42,8 +42,14 @@ function startGame() {
   window.__game = game
   updateTextRes(game)
 
+  // Phaser stops its loop for good if a frame throws. Log the error and keep the game alive.
+  const step = game.step.bind(game)
+  game.step = (time, delta) => {
+    try { step(time, delta) } catch (e) { console.error('[game] frame error', e) }
+  }
+
   let resizeTimer = null
-  window.addEventListener('resize', () => {
+  const onResize = () => {
     clearTimeout(resizeTimer)
     resizeTimer = setTimeout(() => {
       const s = computeGameSize()
@@ -52,7 +58,9 @@ function startGame() {
       game.scale.refresh()
       updateTextRes(game)
     }, 100)
-  })
+  }
+  window.addEventListener('resize', onResize)
+  window.addEventListener('orientationchange', onResize)
 }
 
 // Phones: go fullscreen on the first tap (needs a real user gesture). Both orientations work.

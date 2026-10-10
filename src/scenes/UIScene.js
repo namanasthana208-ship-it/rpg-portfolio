@@ -19,6 +19,8 @@ export class UIScene extends Phaser.Scene {
     this.extraPage = null
     this.selectedChoice = 0
     this._coached = false
+    this._reacting = false
+    this._timers = []
 
     const K = Phaser.Input.Keyboard.KeyCodes
     const kb = this.input.keyboard
@@ -52,7 +54,7 @@ export class UIScene extends Phaser.Scene {
     const ev = this.game.events
     ev.on('dialogue:open', this._onOpen, this)
     ev.on('dialogue:reset', this._onReset, this)
-    ev.on('npc-adjacent', () => this._setTalkCue(true))
+    ev.on('npc-adjacent', label => this._setTalkCue(true, label))
     ev.on('npc-gone', () => this._setTalkCue(false))
     ev.on('world:enter', this._onWorldEnter, this)
 
@@ -67,7 +69,7 @@ export class UIScene extends Phaser.Scene {
   _metrics() {
     const { W, H, phone, portrait, deck } = getLayout(this)
     if (portrait) {
-      const bh = Math.round(Math.min(Math.max(deck.h * 0.5, 96), 128))
+      const bh = Math.round(Math.min(Math.max(deck.h - 94, 96), 140))
       return { W, H, phone, portrait, deck, box: { x: 6, y: deck.y + 16, w: W - 12, h: bh }, line: 9 }
     }
     const bh = phone ? 72 : 90
@@ -186,8 +188,26 @@ export class UIScene extends Phaser.Scene {
 
   // ─── Dialogue flow ────────────────────────────────────────────────
 
-  _onReset() {
+  // Delayed dialogue steps are cancelled when the conversation ends, so a late timer
+  // can never run against a closed dialogue (that used to throw and freeze the game).
+  _later(ms, fn) {
+    const t = this.time.delayedCall(ms, () => {
+      this._timers = this._timers.filter(x => x !== t)
+      if (this.dialogueOpen && !this._closing) fn()
+    })
+    this._timers.push(t)
+  }
+
+  _cancelTimers() {
+    for (const t of this._timers) t.remove()
+    this._timers = []
     this._typeTimer?.remove()
+    this._typeTimer = null
+  }
+
+  _onReset() {
+    this._cancelTimers()
+    this._reacting = false
     this._hideChoice(true)
     this._hideBox(true)
     this.dialogueOpen = false
@@ -213,10 +233,11 @@ export class UIScene extends Phaser.Scene {
     this.dlgText.setText('')
     this._updatePageText()
     this._showBox()
-    this.time.delayedCall(90, () => this._startPage(data.pages[0]))
+    this._later(90, () => this._startPage(data.pages[0]))
   }
 
   _startPage(text, speed = TYPE_MS) {
+    if (!text || !this.dialogueOpen) return
     this.fullText = text
     this.charIdx = 0
     this.typing = true
@@ -238,6 +259,7 @@ export class UIScene extends Phaser.Scene {
     this._typeTimer?.remove()
     this._typeTimer = null
     this.typing = false
+    if (!this.dlgData) return
     this.dlgText.setText(this.fullText)
     const { pages, choice } = this.dlgData
     const last = this.pageIdx >= pages.length - 1
@@ -246,7 +268,7 @@ export class UIScene extends Phaser.Scene {
   }
 
   _advance() {
-    if (!this.dialogueOpen || this._closing || this.inChoice) return
+    if (!this.dialogueOpen || this._closing || this.inChoice || this._reacting) return
     if (this.typing) { this._finishPage(); return }
     if (this.extraPage) { this._close(); return }
     if (this.pageIdx + 1 < this.dlgData.pages.length) {
@@ -262,6 +284,9 @@ export class UIScene extends Phaser.Scene {
   _close() {
     if (this._closing) return
     this._closing = true
+    this._cancelTimers()
+    this._reacting = false
+    this.typing = false
     this.arrow.setVisible(false)
     this._hideChoice()
     this._hideBox(false, () => {
@@ -382,11 +407,15 @@ export class UIScene extends Phaser.Scene {
     this.dlgText.setText('')
     this.arrow.setVisible(false)
     this.pageText.setText('')
-    this.time.delayedCall(700, () => {
-      if (!this.dialogueOpen) return
+    // Taps are ignored until the NPC's reaction starts typing
+    this._reacting = true
+    this._later(700, () => {
       this.game.events.emit('npc:sad')
       window.audioMgr?.sad()
-      this.time.delayedCall(350, () => this._startPage(this.extraPage, 55))
+      this._later(350, () => {
+        this._reacting = false
+        this._startPage(this.extraPage, 55)
+      })
     })
   }
 
@@ -495,8 +524,9 @@ export class UIScene extends Phaser.Scene {
     if (!on) this._setTalkCue(false)
   }
 
-  _setTalkCue(on) {
+  _setTalkCue(on, label = 'TALK') {
     if (!this.isTouch) return
+    this.talkCue.setText(label)
     this._pulse?.stop()
     this._pulse = null
     this.btnA.g.setScale(1)

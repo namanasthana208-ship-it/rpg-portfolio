@@ -19,49 +19,44 @@ const EXPERIENCE = `
   <article class="pf-role-card">
     <h3 class="pf-role">GROWTH ASSOCIATE</h3>
     <p class="pf-meta">DG3 (Barter) &middot; Feb 2025 &ndash; Present</p>
-    ${section('CONTENT', [
-      'Built a football acquisition page on Instagram from zero.',
-      '<b>368K &rarr; 1.06M &rarr; 1.1M &rarr; 3.7M</b> monthly impressions in 4 months.',
-      'Peak: <b>1.99M</b> accounts reached &middot; <b>461K</b> interactions in one month.',
-      "Grew DG3's Twitter from <b>875K to 6M</b> impressions/month in 6 months.",
+    ${section('AFFILIATES', [
+      'Ran the affiliate funnel end to end with a small founding team.',
+      'Set up automated cold DM outreach on X through InboxApp, then personally handled <b>1,000+</b> replies through negotiation and closing.',
+      'Once someone came on board, found out what they were struggling with and built custom assets for their audience and platform.',
+      'On the founding team of a channel that brought in <b>1,600+</b> users and <b>$661K+</b> in trading volume.',
     ])}
     ${section('PAID ACQUISITION', [
-      'Betting ads get blocked everywhere &mdash; so built a surrogate funnel instead.',
-      'Drove traffic to a free prediction game, captured emails, converted warm leads.',
-      '<b>$9.5K</b> across Meta, Reddit, YouTube, Telegram &amp; crypto networks &middot; 7 countries.',
-      '<b>2.1M+</b> impressions &middot; <b>1,900+</b> signups &middot; <b>1,858</b> emails collected.',
-      'Cut CAC from <b>$23.55 &rarr; $6.10 (&minus;74%)</b> by diagnosing UX drop-offs via Clarity and getting the product fixed: OTP flow &rarr; $9 &middot; deep linking &rarr; $7.90 &rarr; $6.10.',
-    ])}
-    ${section('AFFILIATES', [
-      'Ran the affiliate program end to end &mdash; outreach, negotiation, closing, account management.',
-      'Set up automated DM outreach via InboxApp on X, then personally handled <b>1,000+</b> replies through to conversion.',
-      'Built custom assets per affiliate based on their audience and needs.',
-      'Channel total: <b>1,600+</b> users &middot; <b>$661K+</b> in trading volume.',
+      'Betting ads get rejected on most platforms, so built a surrogate funnel: ads for a free football prediction game, then email capture, then a push to the trading platform once users were warm.',
+      '<b>$9.5K</b> across Meta, Reddit, YouTube, Telegram and crypto ad networks in <b>7 countries</b>: <b>2.1M+</b> impressions, <b>1,900+</b> signups and <b>1,850+</b> emails.',
+      'Cut cost per signup from <b>$23.55 to $6.10 (&minus;74%)</b> by fixing the product alongside the ads. Clarity recordings showed people dropping off at the OTP screen: the OTP fix took it to $9, deep linking to $7.90, then a deep-linking fix to $6.10.',
+      'Managed an external agency (Dot Ads).',
     ])}
     ${section('ACTIVATION', [
-      'Led user activation managing a direct report.',
-      'Built onboarding email journeys and ran win-back campaigns for dormant signups.',
-      'Monthly activation rate: <b>20% &rarr; 35%</b>.',
-      'Email open rates consistently <b>25%+</b> &middot; peaks at <b>35%</b>.',
+      'Led user activation and managed one direct report.',
+      'Built the onboarding email journey and ran win-back offers for people who signed up but never traded.',
+      'Monthly activation went from <b>20% to 35%</b>. Email open rates stayed above <b>25%</b> and peaked at <b>35%</b>.',
     ])}
-    ${section('ANALYTICS &amp; OPS', [
-      'Built Python-automated Excel dashboards covering all DG3 pages &mdash; weekly reporting, UTM attribution, targets tracking.',
-      'Set up GTM, GA4, and Microsoft Clarity end to end.',
-      'Wrote PostgreSQL queries for channel-level signup tracking.',
-      'Traced a UTM-stripping bug to the SPA router and got it fixed.',
+    ${section('CONTENT, KOLS &amp; LIVE', [
+      'Plans the DG3 content calendar and runs KOL distribution: <b>38</b> quote-post placements, each with its own creator brief.',
+      "Read X's open-sourced ranking algorithm and rebuilt the content playbook around it.",
+      'Hosted and produced live streams and podcasts through the FIFA World Cup 2026, Wimbledon 2026 and the Premier League.',
+    ])}
+    ${section('ANALYTICS &amp; RESEARCH', [
+      'Built an AI-assisted Python reporting system that produces weekly Excel dashboards for all four DG3 X pages, with UTM attribution.',
+      'Set up GTM, GA4 and Microsoft Clarity end to end. Wrote PostgreSQL queries for signups by channel.',
+      'Traced a bug where the terminal was stripping UTMs back to the SPA router.',
+      'Backtested World Cup 2026 Polymarket strategies across <b>40</b> matches and wrote up the results.',
     ])}
   </article>
   <hr class="pf-divider">
   <article class="pf-role-card">
     <h3 class="pf-role">MARKETING INTERN</h3>
-    <p class="pf-meta">DG3 (Barter) &middot; Jun 2024 &ndash; Feb 2025</p>
+    <p class="pf-meta">DGBet (now DG3) &middot; Jun 2024 &ndash; Feb 2025</p>
     ${li([
-      'Built a football meme page on Instagram as a top-of-funnel acquisition channel. Ran all of it: strategy, creatives, posting.',
-      '<b>368K &rarr; 3.7M</b> monthly impressions in 4 months &middot; <b>1.99M</b> accounts reached at peak.',
-      "Owned DG3's football content on Twitter end to end.",
-      '<b>875K &rarr; 6M</b> impressions/month in 6 months &middot; <b>110 &rarr; 5,000+</b> followers.',
-      'Ran Euro 2024 and Wimbledon campaigns across Twitter, Discord and Telegram.',
-      'Drove <b>$150K+</b> in betting volume in a single month.',
+      'Started a football meme page on Instagram as a top-of-funnel channel and ran all of it.',
+      'Monthly impressions went <b>368K &rarr; 3.7M</b> in four months. The best month reached <b>1.99M</b> accounts and <b>461K</b> interactions.',
+      "Owned DGBet's football content on X: <b>875K &rarr; 6M</b> monthly impressions in six months, and <b>110 &rarr; 5,000+</b> followers.",
+      'Ran Euro 2024 and Wimbledon campaigns with contests across X, Discord and Telegram, driving <b>$150K+</b> in betting volume in one month.',
     ])}
   </article>
   <hr class="pf-divider">
@@ -69,12 +64,10 @@ const EXPERIENCE = `
     <h3 class="pf-role">CONTENT CREATION INTERN</h3>
     <p class="pf-meta">The Indian Idiot &middot; Feb 2023 &ndash; Apr 2024</p>
     ${li([
-      'One of 3 interns working directly under the founder.',
-      '<b>1M+</b> follower Instagram community.',
-      'Wrote <b>150+</b> posts reaching <b>100M+</b> accounts.',
-      'Brands: Netflix, Prime Video, Spotify, Flipkart, Indeed and 15+ others.',
-      'Led ground-up campaigns for Masters&rsquo; Union and ISBF.',
-      'Analysed <b>5,000+</b> user responses across 15 posts to build UGC strategy.',
+      'One of three interns reporting directly to the founder of a <b>1M+</b> follower Instagram community.',
+      'Wrote <b>150+</b> posts reaching <b>100M+</b> accounts, with <b>20+</b> brands including Netflix, Prime Video, Spotify, Flipkart and Indeed.',
+      'Ran campaigns from scratch for Masters&rsquo; Union and ISBF.',
+      'Read through <b>5,000+</b> user responses to pick the ones worth turning into user-generated content.',
     ])}
   </article>`
 
@@ -94,13 +87,13 @@ const chips = items => `<div class="pf-chips">${items.map(t => `<span class="pf-
 
 const SKILLS = `
   <h4 class="pf-section"><span>GROWTH</span></h4>
-  ${chips(['Performance marketing', 'Affiliate &amp; partnerships', 'KOL &amp; influencer marketing', 'Lifecycle email', 'User activation', 'Funnel &amp; CAC optimisation', 'Cold outreach', 'Key account management', 'Agency management'])}
+  ${chips(['Performance marketing (Meta, Reddit, YouTube, Google Ads)', 'Affiliate &amp; partnerships', 'KOL &amp; influencer marketing', 'Lifecycle email', 'User activation', 'Funnel &amp; CAC optimisation', 'Cold outreach', 'Key account management', 'Agency management'])}
   <h4 class="pf-section"><span>CONTENT</span></h4>
   ${chips(['Content strategy', 'Copywriting', 'Short-form video', 'Social media (X, Instagram)', 'Community (Discord, Telegram)', 'Live stream &amp; podcast production'])}
   <h4 class="pf-section"><span>ANALYTICS &amp; TOOLS</span></h4>
-  ${chips(['GA4', 'GTM', 'Microsoft Clarity', 'UTM attribution', 'SQL (PostgreSQL)', 'Excel', 'Python (AI-assisted)', 'Prompt writing'])}
+  ${chips(['GA4', 'GTM', 'Microsoft Clarity', 'UTM attribution', 'SQL (PostgreSQL)', 'Excel', 'Python (AI-assisted)', 'Claude', 'Prompt writing', 'InboxApp'])}
   <h4 class="pf-section"><span>DOMAIN</span></h4>
-  ${chips(['Prediction markets', 'Polymarket', 'Kalshi', 'Sports trading'])}
+  ${chips(['Prediction markets', 'Polymarket', 'Kalshi', 'Sports trading', 'Crypto'])}
   <h4 class="pf-section"><span>EXECUTION</span></h4>
   <p class="pf-quote">&ldquo;I can get things done.&rdquo;</p>`
 
@@ -111,7 +104,7 @@ const contactCard = (label, value, href, { download, icon = '&#8599;', cls = '' 
   </a>`
 
 const CONTACT = `
-  <p class="pf-lead">Let&rsquo;s talk.</p>
+  <p class="pf-lead">If you&rsquo;re hiring for growth, or you work in coffee, let&rsquo;s talk.</p>
   <div class="pf-contact">
     ${contactCard('RESUME', 'Download PDF', RESUME_URL, { download: RESUME_FILE, icon: '&#8595;', cls: 'pf-resume-card' })}
     ${contactCard('LINKEDIN', 'linkedin.com/in/naman-asthana-a1874722a', 'https://linkedin.com/in/naman-asthana-a1874722a')}

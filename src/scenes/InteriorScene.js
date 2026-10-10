@@ -1,4 +1,4 @@
-import { INTERIOR_NPCS } from '../data/npcs.js'
+import { INTERIOR_NPCS, GBA_PAGES } from '../data/npcs.js'
 import { WorldScene } from './WorldScene.js'
 import { TILE } from '../layout.js'
 
@@ -36,6 +36,7 @@ export class InteriorScene extends WorldScene {
       const npc = this.addNPC(d, { wander: !raunak })
       if (raunak) this.raunak = npc
     }
+    this.addInspectable({ ...this._gbaTile, pages: GBA_PAGES })
 
     window.audioMgr?.playTown()
   }
@@ -58,6 +59,17 @@ export class InteriorScene extends WorldScene {
       g.fillStyle(0x2a1a10, 1).fillRect(x + T - 1, y, 2, T + 8).fillRect(x, y + 11, 2 * T, 2)
       g.fillStyle(0x8a6040, 1).fillRect(x - 4, y + T + 8, 2 * T + 8, 3)
     }
+
+    // A GBA on the side table — press A on it
+    const gx = 2 * T, gy = 6 * T
+    const gba = this.add.graphics().setDepth(6)
+    gba.fillStyle(0x000000, 0.25).fillRoundedRect(gx + 2, gy + 6, 13, 7, 2)
+    gba.fillStyle(0x4a3c8c, 1).fillRoundedRect(gx + 1, gy + 4, 14, 8, 3)
+    gba.fillStyle(0x1a1a28, 1).fillRect(gx + 5, gy + 5, 6, 5)
+    gba.fillStyle(0x9ad08a, 1).fillRect(gx + 6, gy + 6, 4, 3)
+    gba.fillStyle(0x2a2050, 1).fillRect(gx + 2, gy + 7, 2, 1).fillRect(gx + 2.5, gy + 6.5, 1, 2)
+    gba.fillStyle(0xd84848, 1).fillCircle(gx + 13, gy + 7, 0.9).fillCircle(gx + 12, gy + 9, 0.9)
+    this._gbaTile = { gx: 2, gy: 6 }
 
     for (const [px, py] of [[2, 4], [27, 4], [2, 15], [27, 15]]) {
       const x = px * T, y = py * T

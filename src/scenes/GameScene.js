@@ -1,4 +1,4 @@
-import { EXTERIOR_NPCS } from '../data/npcs.js'
+import { EXTERIOR_NPCS, SIGN_PAGES } from '../data/npcs.js'
 import { WorldScene } from './WorldScene.js'
 import { TILE } from '../layout.js'
 
@@ -17,6 +17,8 @@ const MAP_H  = 30
 const BUILDINGS = [
   { gx: 14, gy: 3, frame: 'bldg_red', pw: 192, ph: 162, scale: 2 },
 ]
+
+const SIGN = { gx: 16, gy: 13 }
 
 // Door tile positions — sprite pixel analysis: door is at sprite x=25-34 → game tiles 17-18
 const DOOR_ROW = 12
@@ -47,6 +49,7 @@ export class GameScene extends WorldScene {
 
     this.setupWorld({ cols: MAP_W, rows: MAP_H, collision, spawn })
     for (const npc of EXTERIOR_NPCS) this.addNPC(npc)
+    this.addInspectable({ ...SIGN, pages: SIGN_PAGES })
 
     window.audioMgr?.playTown()
   }
@@ -157,6 +160,7 @@ function buildObjectsMap() {
 
   map[15][14] = T.BUSH; map[15][25] = T.BUSH
   map[7][8]   = T.ROCK; map[7][30]  = T.ROCK
+  map[SIGN.gy][SIGN.gx] = T.SIGN
 
   return map
 }

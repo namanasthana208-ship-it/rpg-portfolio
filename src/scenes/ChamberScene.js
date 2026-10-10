@@ -1,5 +1,6 @@
 import { FONT, TILE } from '../layout.js'
-import { WorldScene, tileX, tileY } from './WorldScene.js'
+import { WorldScene, tileX, tileY, dirToward } from './WorldScene.js'
+import { NAMAN_LINES } from '../data/npcs.js'
 
 const CW = 30
 const CH = 20
@@ -22,8 +23,9 @@ export class ChamberScene extends WorldScene {
 
     this.naman = this.addNPC({
       key: 'npc_naman', name: 'NAMAN', gx: NAMAN.gx, gy: NAMAN.gy, facing: 'down',
-      onTalk: () => this._startBattle(),
+      pages: NAMAN_LINES.before,
     })
+    this._afterBattle = false
     this._buildAura()
 
     this.label = this.add.text(tileX(NAMAN.gx), tileY(NAMAN.gy) - 34, '★ NAMAN ★', {
@@ -73,7 +75,16 @@ export class ChamberScene extends WorldScene {
 
   // ─── Battle hand-off ──────────────────────────────────────────────
 
+  // Talking to Naman starts the battle once his line is done; his post-battle line doesn't.
+  onDialogueClosed(npc) {
+    if (npc !== this.naman) return
+    if (this._afterBattle) { this._afterBattle = false; return }
+    this._startBattle()
+  }
+
   _startBattle() {
+    this.busy = true
+    this.game.registry.set('inputLock', true)
     this.game.registry.set('joyDir', null)
     this.game.events.emit('npc-gone')
     this.scene.setVisible(false, 'UIScene')
@@ -91,6 +102,13 @@ export class ChamberScene extends WorldScene {
     this.cameras.main.resetFX()
     this.cameras.main.fadeIn(500, 0, 0, 0)
     window.audioMgr?.playChamber()
+    // Once you've seen the portfolio, Naman says his piece unprompted
+    this.busy = true
+    this.time.delayedCall(700, () => {
+      this.faceNPC(this.naman, dirToward(this.naman.gx, this.naman.gy, this.gridX, this.gridY))
+      this._afterBattle = true
+      this.say(this.naman, NAMAN_LINES.after)
+    })
   }
 
   // ─── Room ─────────────────────────────────────────────────────────

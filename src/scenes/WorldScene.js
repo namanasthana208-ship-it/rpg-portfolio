@@ -43,6 +43,7 @@ export class WorldScene extends Phaser.Scene {
     this.isMoving = false
     this.busy = false
     this.npcs = []
+    this.inspectables = []
     this._lastAdj = null
     this._foot = 0
     this._bumpAt = 0
@@ -92,6 +93,7 @@ export class WorldScene extends Phaser.Scene {
     this.scale.off('resize', this._onResize, this)
     ev.emit('npc-gone')
     this.npcs = []
+    this.inspectables = []
     this._lastAdj = null
     this._talking = null
     this.onTeardown?.()
@@ -135,6 +137,14 @@ export class WorldScene extends Phaser.Scene {
     return npc
   }
 
+  // Something you can walk up to and press A on (signs, the GBA…). Solid, no sprite of its own.
+  addInspectable({ gx, gy, pages }) {
+    const obj = { gx, gy, pages, inspectable: true }
+    this.inspectables.push(obj)
+    this.collision[gy][gx] = true
+    return obj
+  }
+
   faceNPC(npc, dir) {
     npc.facing = dir
     setFacing(npc.sprite, dir)
@@ -153,17 +163,21 @@ export class WorldScene extends Phaser.Scene {
 
   // ─── Talking ──────────────────────────────────────────────────────
 
-  _npcInFront() {
+  _targetInFront() {
     const [dx, dy] = DELTA[this.playerDir]
     const fx = this.gridX + dx, fy = this.gridY + dy
-    return this.npcs.find(n => n.gx === fx && n.gy === fy && !n.walking) ?? null
+    return this.npcs.find(n => n.gx === fx && n.gy === fy && !n.walking)
+      ?? this.inspectables.find(o => o.gx === fx && o.gy === fy)
+      ?? null
   }
 
   _onInteract() {
     if (this.busy || this.isMoving || this.game.registry.get('inputLock')) return
     if (this.time.now < (this._talkAgainAt ?? 0)) return
-    const npc = this._npcInFront()
-    if (npc) this.talkTo(npc)
+    const target = this._targetInFront()
+    if (!target) return
+    if (target.inspectable) this.inspect(target)
+    else this.talkTo(target)
   }
 
   talkTo(npc) {
@@ -171,11 +185,25 @@ export class WorldScene extends Phaser.Scene {
     this.game.registry.set('inputLock', true)
     this._hideHint()
     this.faceNPC(npc, OPPOSITE[this.playerDir])
-    this.popBubble(npc, () => {
-      if (npc.onTalk) { npc.onTalk(npc); return }
-      this._talking = npc
-      this.game.events.emit('dialogue:open', { name: npc.name, pages: npc.pages, choice: npc.choice ?? null })
-    })
+    this.popBubble(npc, () => this.say(npc, npc.pages, npc.choice))
+  }
+
+  // Open a dialogue owned by an NPC (no bubble) — also used for unprompted lines.
+  say(npc, pages, choice = null) {
+    this.busy = true
+    this.game.registry.set('inputLock', true)
+    this._hideHint()
+    this._talking = npc
+    this.game.events.emit('dialogue:open', { name: npc.name, pages, choice })
+  }
+
+  inspect(obj) {
+    this.busy = true
+    this.game.registry.set('inputLock', true)
+    this._hideHint()
+    this._talking = null
+    window.audioMgr?.cursor()
+    this.game.events.emit('dialogue:open', { name: '', pages: obj.pages, choice: null })
   }
 
   popBubble(npc, then) {
@@ -226,18 +254,24 @@ export class WorldScene extends Phaser.Scene {
   _buildHint() {
     const label = this.isTouch ? 'A' : 'Z'
     this._hint = this.add.container(0, 0).setDepth(70).setVisible(false)
-    const bg = this.add.graphics()
+    this._hintBg = this.add.graphics()
     const key = this.add.text(-10, 0, label, { fontFamily: FONT, fontSize: '6px', color: '#283048' }).setOrigin(0.5)
-    const txt = this.add.text(6, 0, 'TALK', { fontFamily: FONT, fontSize: '6px', color: '#ffffff' }).setOrigin(0.5)
-    bg.fillStyle(0x283048, 0.88).fillRoundedRect(-16, -6, 38, 12, 6)
-    bg.fillStyle(0xffd34a, 1).fillCircle(-10, 0, 5)
-    this._hint.add([bg, key, txt])
+    this._hintTxt = this.add.text(-3, 0, 'TALK', { fontFamily: FONT, fontSize: '6px', color: '#ffffff' }).setOrigin(0, 0.5)
+    this._hint.add([this._hintBg, key, this._hintTxt])
   }
 
-  _showHint(npc) {
-    this._hint.setPosition(npc.sprite.x, npc.baseY - 22).setVisible(true).setAlpha(0)
+  _showHint(target) {
+    const label = target.inspectable ? 'CHECK' : 'TALK'
+    this._hintTxt.setText(label)
+    const w = this._hintTxt.width + 22
+    this._hintBg.clear()
+    this._hintBg.fillStyle(0x283048, 0.88).fillRoundedRect(-16, -6, w, 12, 6)
+    this._hintBg.fillStyle(0xffd34a, 1).fillCircle(-10, 0, 5)
+    const x = target.inspectable ? tileX(target.gx) : target.sprite.x
+    const y = target.inspectable ? target.gy * TILE - 6 : target.baseY - 25
+    this._hint.setPosition(x - (w - 32) / 2, y + 3).setVisible(true).setAlpha(0)
     this.tweens.killTweensOf(this._hint)
-    this.tweens.add({ targets: this._hint, alpha: 1, y: npc.baseY - 25, duration: 160, ease: 'Sine.Out' })
+    this.tweens.add({ targets: this._hint, alpha: 1, y, duration: 160, ease: 'Sine.Out' })
   }
 
   _hideHint() {
@@ -357,10 +391,10 @@ export class WorldScene extends Phaser.Scene {
       npc.sprite.setDepth(10 + npc.baseY / 10000)
     }
 
-    const npc = (!this.busy && !this.isMoving && !this.game.registry.get('inputLock')) ? this._npcInFront() : null
-    if (npc !== this._lastAdj) {
-      this._lastAdj = npc
-      if (npc) { this._showHint(npc); this.game.events.emit('npc-adjacent') }
+    const target = (!this.busy && !this.isMoving && !this.game.registry.get('inputLock')) ? this._targetInFront() : null
+    if (target !== this._lastAdj) {
+      this._lastAdj = target
+      if (target) { this._showHint(target); this.game.events.emit('npc-adjacent', target.inspectable ? 'CHECK' : 'TALK') }
       else { this._hideHint(); this.game.events.emit('npc-gone') }
     }
     this.onUpdate?.(time)
